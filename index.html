@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>빈 강의실 찾기</title>
+<style>
+  :root {
+    --bg: #FFFFFF; --card: #FFFFFF; --ink: #1D2329; --muted: #6B747C; --line: #DDDAD3;
+    --blue: #1E4FB6;
+    --green: #1E9E5A;  --green-bg: #E3F4EA;
+    --orange: #E8871E; --orange-bg: #FDEFD9;
+    --red: #D9443B;    --red-bg: #FBE3E1;
+    --gray: #8A939B;   --gray-bg: #ECEEF0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  .screen { max-width: 520px; margin: 0 auto; min-height: 100vh; padding-bottom: 92px; }
+  [hidden] { display: none !important; }
+
+  /* ── 첫 화면: 지도 ── */
+  .map { position: relative; }
+  .map img { display: block; width: 100%; height: auto; }
+  .hot { position: absolute; border: 0; background: transparent; border-radius: 999px; cursor: pointer; padding: 0; }
+  .hot:active { background: rgba(30, 79, 182, .15); }
+  .map-error { padding: 40px 20px; text-align: center; color: var(--muted); }
+
+  /* ── 하단 버튼 두 개 (모든 화면 공통) ── */
+  .bottom { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg);
+            border-top: 1px solid var(--line); padding: 12px 16px 16px; }
+  .bottom .inner { max-width: 520px; margin: 0 auto; display: flex; gap: 10px; }
+  .bottom button { flex: 1; padding: 15px 4px; border-radius: 12px; font-size: clamp(13px, 3.8vw, 15px); font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .bottom .btn-main { flex: 1.45; }
+  .btn-mid { background: #fff; border: 1.5px solid #111; color: #111; }
+  .btn-main { background: var(--blue); color: #fff; border: 0; }
+  .btn-sub { background: #fff; border: 2px solid var(--red); color: var(--red); }
+
+  /* ── 조회 화면 ── */
+  .top { padding: 14px 16px 12px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .back { border: 0; background: none; color: var(--blue); font-weight: 700; padding: 4px 0; cursor: pointer; }
+  h1 { font-size: 22px; margin: 6px 0 12px; }
+  .row { display: flex; gap: 8px; }
+  .row select { flex: 1; min-width: 0; padding: 11px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 16px; }
+  .search { width: 52px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-size: 20px; cursor: pointer; }
+  .now-btn { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--blue); background: #fff;
+             color: var(--blue); border-radius: 10px; font-weight: 700; cursor: pointer; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px 0; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  .result-info { padding: 10px 16px 0; font-size: 14px; color: var(--muted); }
+  .list { padding: 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 30px 10px; text-align: center; color: var(--muted); }
+
+  /* 층 선택 버튼 */
+  .floors { display: flex; gap: 6px; overflow-x: auto; margin: -2px 0 10px; padding-bottom: 2px; scrollbar-width: none; }
+  .floors::-webkit-scrollbar { display: none; }
+  .floors button { flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+                   background: #fff; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .floors button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+  /* 강의실 카드: [강의실번호(상태색 배경)] [상태] [현재 인원] [크기(회색)] */
+  .card { display: flex; align-items: center; gap: 7px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 14px; padding: 8px; }
+  /* 강의실 번호 상자: 카드 높이만큼 세로로 길게, 배경은 연하고 투명하게, 글씨는 진하게 */
+  .rid { flex: 0 0 auto; align-self: stretch; min-width: 78px; min-height: 72px; padding: 12px 6px; border-radius: 10px;
+         display: flex; align-items: center; justify-content: center;
+         font-size: 22px; font-weight: 800; letter-spacing: .01em; }
+  .bg-green  { background: rgba(30, 158, 90, .12);  color: #11663A; }
+  .bg-orange { background: rgba(232, 135, 30, .14); color: #8F4E07; }
+  .bg-red    { background: rgba(217, 68, 59, .12);  color: #9E2620; }
+  .bg-gray   { background: rgba(138, 147, 155, .14); color: #4E565E; }
+  .card .mid { flex: 1; min-width: 0; overflow: hidden; }
+  .st { font-size: 16px; font-weight: 800; white-space: nowrap; }
+  .t-green { color: var(--green); } .t-orange { color: var(--orange); } .t-red { color: var(--red); } .t-gray { color: var(--gray); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ppl { flex: 0 0 auto; min-width: 40px; text-align: center; font-size: 24px; font-weight: 800; line-height: 1.1; }
+  .ppl small { display: block; font-size: 10px; white-space: nowrap; font-weight: 600; color: var(--muted); }
+  /* 크기 상자와 대여 버튼은 같은 크기 */
+  .card .size, .rent { flex: 0 0 56px; height: 52px; border-radius: 10px; }
+  .card .size { background: var(--gray-bg); color: var(--gray); padding: 7px 4px; text-align: center; font-size: 12px; line-height: 1.3; }
+  .rent { background: #fff; border: 1.5px solid #111; color: #111; font-size: 16px; font-weight: 800; cursor: pointer; padding: 0; }
+  .rent:active { background: #F1F1F1; }
+  .rent:disabled { border-color: #C5C9CD; color: #B4B9BE; cursor: not-allowed; }
+  .card .size b { display: block; font-size: 17px; color: #7C858D; }
+  /* 강의실(QR) 화면용 상태 표시 */
+  .chip { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 800; font-size: 15px; }
+  .c-green  { color: var(--green);  background: var(--green-bg); }
+  .c-orange { color: var(--orange); background: var(--orange-bg); }
+  .c-red    { color: var(--red);    background: var(--red-bg); }
+  .c-gray   { color: var(--gray);   background: var(--gray-bg); }
+
+  /* ── 강의실(QR) 화면 / 신고 화면 ── */
+  .panel { margin: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .big { font-size: 40px; font-weight: 800; margin: 0 0 8px; }
+  .stepper { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+  .stepper button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: #F3F4F5; font-size: 20px; cursor: pointer; }
+  .stepper b { min-width: 50px; text-align: center; font-size: 18px; }
+  .rules { background: #F3F4F5; border-radius: 10px; padding: 12px; font-size: 14px; margin-bottom: 14px; }
+  .rules ul { margin: 6px 0 10px; padding-left: 18px; }
+  .wide { width: 100%; padding: 14px; border-radius: 12px; border: 0; font-weight: 800; font-size: 16px; cursor: pointer; }
+  .wide:disabled { opacity: .4; cursor: not-allowed; }
+  .wide.blue { background: var(--blue); color: #fff; }
+  .wide.line { background: #fff; border: 2px solid var(--red); color: var(--red); margin-top: 8px; }
+  .reasons { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+  .reasons button { padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line); background: #F3F4F5; cursor: pointer; }
+  .reasons button.on { border-color: var(--red); color: var(--red); background: var(--red-bg); font-weight: 700; }
+  .field { width: 100%; padding: 11px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 16px; margin-bottom: 10px; }
+  /* 선택 칸의 아래 화살표를 오른쪽 끝에서 조금 안쪽으로 */
+  select.field, .row select {
+    -webkit-appearance: none; appearance: none; padding-right: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23444B52' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 16px center; background-size: 12px 8px;
+  }
+  label.small { display: block; font-size: 14px; color: var(--muted); margin: 4px 0 6px; }
+
+  /* 강의실 세부정보 팝업 */
+  .card { cursor: pointer; }
+  .card:active { background: #F7F8F9; }
+  .modal { position: fixed; inset: 0; background: rgba(20, 24, 28, .45); display: flex; align-items: center;
+           justify-content: center; padding: 20px; z-index: 30; }
+  .sheet { position: relative; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto; background: #fff;
+           border-radius: 18px; padding: 22px 20px 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .2); }
+  .sheet .x { position: absolute; top: 10px; right: 12px; width: 38px; height: 38px; border: 0; background: none;
+              font-size: 26px; color: var(--muted); cursor: pointer; }
+  .sheet .title { font-size: 44px; font-weight: 800; letter-spacing: .02em; margin: 0 0 14px; }
+  .info { width: 100%; border-collapse: collapse; font-size: 16px; }
+  .info th { text-align: left; font-weight: 600; color: var(--muted); padding: 11px 0; width: 42%; border-top: 1px solid var(--line); }
+  .info td { text-align: right; font-weight: 800; padding: 11px 0; border-top: 1px solid var(--line); }
+  .info tr:first-child th, .info tr:first-child td { border-top: 0; }
+  .info td.empty { color: #B4B9BE; font-weight: 600; }
+  .sheet .close { margin-top: 14px; }
+
+  /* 대여 화면 */
+  #purposes button.on { border-color: var(--blue); color: var(--blue); background: #E6EDFA; }
+  .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
+  .summary { font-weight: 800; margin: 4px 0 12px; }
+  .my-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .my-item:first-of-type { border-top: 0; }
+  .my-item .what { flex: 1; min-width: 0; }
+  .my-item .what b { display: block; font-size: 17px; }
+  .my-item .what small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .my-item.off { opacity: .5; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: 2px; }
+  .tag.now { background: var(--orange-bg); color: var(--orange); }
+  .tag.soon { background: #E6EDFA; color: var(--blue); }
+  .tag.cancel { background: var(--gray-bg); color: var(--gray); }
+  .my-item button { padding: 7px 12px; border-radius: 8px; border: 1px solid #111; background: #fff; cursor: pointer; font-weight: 700; }
+
+  .toast { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); background: var(--ink); color: #fff;
+           padding: 11px 18px; border-radius: 10px; font-size: 15px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ===================== 1. 첫 화면 (지도) ===================== -->
+<section id="home" class="screen">
+  <div class="map" id="map">
+    <img id="mapImg" src="campus_map.jpg" alt="캠퍼스 지도">
+  </div>
+</section>
+
+<!-- ===================== 2. 빈 강의실 조회 화면 ===================== -->
+<section id="search" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="go('home')">‹ 지도로</button>
+    <h1 id="searchTitle">빈 강의실 조회</h1>
+    <select id="building" class="field"></select>
+    <div class="floors" id="floors"></div>
+    <div class="row">
+      <select id="day"></select>
+      <select id="time"></select>
+      <button class="search" onclick="search()" aria-label="검색">🔍</button>
+    </div>
+    <button class="now-btn" onclick="setNowAndSearch()">현재 시간으로 선택하기</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--green)"></i>비었음</span>
+    <span><i style="background:var(--orange)"></i>사용중</span>
+    <span><i style="background:var(--red)"></i>대여중·시험중</span>
+    <span><i style="background:var(--gray)"></i>수업중</span>
+  </div>
+  <div class="result-info" id="resultInfo"></div>
+  <div class="list" id="list"><div class="msg">요일과 시간을 고르고 🔍를 눌러 주세요.</div></div>
+</section>
+
+<!-- ===================== 3. 강의실 화면 (QR로 들어올 때) ===================== -->
+<section id="room" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="go('home')">‹ 지도로</button>
+  </div>
+  <div id="roomBody"><div class="msg">불러오는 중...</div></div>
+</section>
+
+<!-- ===================== 5. 대여 화면 (선착순) ===================== -->
+<section id="rent" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="backToSearch()">‹ 목록으로</button>
+    <h1 id="rentTitle">대여하기</h1>
+  </div>
+  <div class="panel">
+    <p class="summary" id="rToday" style="margin-top:0"></p>
+    <label class="small">시작 시간</label>
+    <select id="rStart" class="field" onchange="fillRentHours()"></select>
+    <label class="small">사용 시간</label>
+    <select id="rHours" class="field" onchange="updateRentSummary()"></select>
+    <label class="small">인원</label>
+    <select id="rPeople" class="field"></select>
+    <label class="small">목적</label>
+    <div class="reasons" id="purposes"></div>
+    <div class="rules"><b>대여 수칙</b>
+      <ul><li>선착순이에요. 먼저 신청한 사람이 우선이에요</li>
+          <li>못 쓰게 되면 꼭 아래 '내 대여'에서 취소해 주세요</li>
+          <li>퇴실할 때 소등, 전열기구 금지, 책상 원위치</li></ul>
+      <label><input type="checkbox" id="rAgree" onchange="updateRentSummary()"> 수칙을 확인했어요</label>
+    </div>
+    <p class="summary" id="rSummary"></p>
+    <button class="wide blue" id="rSend" onclick="sendRental()" disabled>대여 신청하기</button>
+    <p class="note">이 대여는 학생들끼리 사용 예정을 알리는 표시예요. 학교 공식 강의실 대여는 아니에요.</p>
+  </div>
+</section>
+
+<!-- ===================== 6. 내 대여 화면 ===================== -->
+<section id="mine" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="go('home')">‹ 지도로</button>
+    <h1>내 대여</h1>
+  </div>
+  <div class="panel" id="myList"></div>
+  <p class="note" style="padding: 0 18px">이 기기에서 신청한 대여만 보여요. 다른 휴대폰이나 브라우저에서 신청한 대여는 그 기기에서 확인해 주세요.</p>
+</section>
+
+<!-- ===================== 4. 신고 화면 ===================== -->
+<section id="report" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="go('home')">‹ 지도로</button>
+    <h1>신고하기</h1>
+  </div>
+  <div class="panel">
+    <label class="small">건물</label>
+    <select id="repBuilding" class="field" onchange="loadReportRooms()"></select>
+    <label class="small">강의실</label>
+    <select id="repRoom" class="field"><option value="">건물을 먼저 골라 주세요</option></select>
+    <label class="small">무엇이 문제인가요?</label>
+    <div class="reasons" id="reasons"></div>
+    <input id="repEtc" class="field" maxlength="40" placeholder="기타 사유를 짧게 적어 주세요" hidden>
+    <button class="wide blue" id="repSend" onclick="sendReport()">신고 보내기</button>
+  </div>
+</section>
+
+<!-- ===================== 하단 버튼 ===================== -->
+<div class="bottom">
+  <div class="inner">
+    <button class="btn-main" onclick="go('home')">빈 강의실 조회하기</button>
+    <button class="btn-mid" onclick="openMine()">내 대여</button>
+    <button class="btn-sub" onclick="openReport()">신고하기</button>
+  </div>
+</div>
+<!-- 강의실 세부정보 팝업 -->
+<div class="modal" id="detail" hidden onclick="if (event.target === this) closeDetail()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <button class="x" onclick="closeDetail()" aria-label="닫기">×</button>
+    <p class="title" id="dTitle"></p>
+    <table class="info" id="dInfo"></table>
+    <button class="wide blue close" onclick="closeDetail()">닫기</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== 기본 데이터 ===== */
+// Apps Script 웹앱 주소 (배포를 새로 만들면 여기만 바꾸세요)
+const API_URL = 'https://script.google.com/macros/s/AKfycbzUVLwF11bfHC7dEg7kia2HECHbrdgC0IJofCfY_eat6enxOpITJ8teCNw_9YfGifR0/exec';
+// QR 코드 주소: ...github.io/저장소/?room=N101
+const QR_ROOM = (() => {
+  const r = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
+  return /^[A-Z]{1,3}\d{2,4}$/.test(r) ? r : '';
+})();
+const DAYS = '일월화수목금토';
+const FIRST_HOUR = 9;    // 첫 시간 칸 9:00~9:50
+const LAST_HOUR = 21;    // 마지막 시간 칸 21:00~21:50 (저녁 10시 전까지)
+
+// 지도 위 글자(라벨)의 위치 (campus_map.jpg 기준 %)
+const BUILDINGS = [
+  { code: 'SH', name: '성심관', left: 74.5, top: 2.2, width: 22.7, height: 5.1 },
+  { code: 'NP', name: '약학관', left: 2.8, top: 10.1, width: 22.8, height: 5.1 },
+  { code: 'CH', name: '콘서트홀', left: 70.7, top: 19.8, width: 26.5, height: 5.1 },
+  { code: 'B', name: '학생회관', left: 72.7, top: 42.2, width: 24.5, height: 5.1 },
+  { code: 'D', name: '다솔관', left: 2.8, top: 44.7, width: 20.8, height: 5.1 },
+  { code: 'BA', name: '밤비노관', left: 70.9, top: 50.5, width: 26.3, height: 5.1 },
+  { code: 'V', name: '비르투스관', left: 2.8, top: 55.0, width: 28.1, height: 5.1 },
+  { code: 'N', name: '니콜스관', left: 72.5, top: 58.8, width: 24.7, height: 5.1 },
+  { code: 'M', name: '마리아관', left: 72.2, top: 67.1, width: 25.0, height: 5.1 },
+  { code: 'K', name: '김수환관', left: 72.7, top: 75.4, width: 24.5, height: 5.1 },
+  { code: 'C', name: '예수성심관', left: 2.8, top: 79.2, width: 28.2, height: 5.1 }
+];
+const REASONS = ['잠겨 있어요', '시험 배치돼 있어요', '수업·행사 중이에요', '시설이 망가졌어요', '기타'];
+
+let reportReason = '';
+let lastResult = null;   // 마지막 조회 결과
+let floor = 'all';      // 선택한 층
+let people = 1;
+let myCheckin = null;   // { id, row, expire }
+
+/* ===== 공통 ===== */
+const $ = (id) => document.getElementById(id);
+function go(name) {
+  ['home', 'search', 'room', 'report', 'rent', 'mine'].forEach((s) => { $(s).hidden = s !== name; });
+  window.scrollTo(0, 0);
+}
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// 서버(Apps Script) 함수 호출. text/plain으로 보내야 브라우저의 추가 확인(CORS 사전요청) 없이 바로 전달됨
+async function api(fn, args) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ fn: fn, args: args || [] })
+  });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error || '서버 오류');
+  return out.data;
+}
+function call(fn, args, ok) {
+  api(fn, args).then(ok)
+    .catch((err) => toast('오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요')));
+}
+
+/* ===== 1. 지도 화면 ===== */
+function buildMap() {
+  const img = $('mapImg');
+  img.onerror = () => {
+    $('map').innerHTML = '<div class="map-error">지도 이미지를 불러오지 못했어요.<br>campus_map.jpg 파일이 index.html과 같은 곳에 있는지 확인해 주세요.</div>';
+  };
+  BUILDINGS.forEach((b) => {
+    const btn = document.createElement('button');
+    btn.className = 'hot';
+    btn.setAttribute('aria-label', b.name + ' 빈 강의실 보기');
+    btn.style.left = b.left + '%';
+    btn.style.top = (b.top - 0.8) + '%';          // 누르기 쉽게 위아래로 조금 넓힘
+    btn.style.width = b.width + '%';
+    btn.style.height = (b.height + 1.6) + '%';
+    btn.onclick = () => openSearch(b.code);
+    $('map').appendChild(btn);
+  });
+}
+
+/* ===== 2. 조회 화면 ===== */
+function fillSelects() {
+  const opts = BUILDINGS.map((b) => `<option value="${b.code}">${b.name} (${b.code})</option>`).join('');
+  $('building').innerHTML = opts;
+  $('repBuilding').innerHTML = '<option value="">건물 선택</option>' + opts;
+  $('day').innerHTML = ['월', '화', '수', '목', '금', '토', '일'].map((d) => `<option value="${d}">${d}요일</option>`).join('');
+  // 시간: 9:00~9:50, 10:00~10:50, ... 21:00~21:50 (정각 시작, 50분 끝)
+  let t = '';
+  for (let h = FIRST_HOUR; h <= LAST_HOUR; h++) {
+    const hh = String(h).padStart(2, '0');
+    t += `<option value="${hh}:00">${h}:00~${h}:50</option>`;
+  }
+  $('time').innerHTML = t;
+  $('building').onchange = () => { floor = 'all'; updateTitle(); search(); };
+}
+function updateTitle() {
+  const b = BUILDINGS.find((x) => x.code === $('building').value);
+  $('searchTitle').textContent = (b ? b.name : '') + ' 빈 강의실';
+}
+function setDayTime(day, time) {
+  $('day').value = day;
+  $('time').value = time;
+}
+function openSearch(code) {
+  if (code) $('building').value = code;
+  floor = 'all';
+  updateTitle();
+  go('search');
+  setNowAndSearch();
+}
+// 현재 시각 그대로 조회 (예: 14:23이면 14:23 한 순간의 상태)
+function setNowAndSearch() {
+  const d = new Date();
+  const hhmm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const old = $('time').querySelector('option[data-now]');
+  if (old) old.remove();
+  const o = document.createElement('option');
+  o.value = 'now:' + hhmm;
+  o.textContent = hhmm + ' (현재)';
+  o.setAttribute('data-now', '1');
+  $('time').insertBefore(o, $('time').firstChild);
+  setDayTime(DAYS[d.getDay()], o.value);
+  search();
+}
+function search() {
+  const code = $('building').value, day = $('day').value;
+  let time = $('time').value, exact = false;
+  if (time.indexOf('now:') === 0) { time = time.slice(4); exact = true; }   // 현재 시각 조회
+  $('list').innerHTML = '<div class="msg">불러오는 중...</div>';
+  $('resultInfo').textContent = '';
+  call('getRooms', [code, day, time, exact], renderList);
+}
+function renderList(res) {
+  lastResult = res;
+  const live = res.isLive ? '실시간 체크인 반영' : '시간표 기준 (체크인 인원은 지금 시간에만 보여요)';
+  $('resultInfo').textContent = `${res.day}요일 ${res.time} · ${live}`;
+  renderFloors();
+  drawCards();
+}
+function floorOf(id) { return Math.floor(Number(id.replace(/^[A-Z]+/, '')) / 100); }
+function renderFloors() {
+  const floors = [...new Set((lastResult ? lastResult.rooms : []).map((r) => floorOf(r.id)))].sort((a, b) => a - b);
+  if (floor !== 'all' && !floors.includes(Number(floor))) floor = 'all';
+  $('floors').innerHTML = [`<button class="${floor === 'all' ? 'on' : ''}" onclick="pickFloor('all')">전체</button>`]
+    .concat(floors.map((f) => `<button class="${String(floor) === String(f) ? 'on' : ''}" onclick="pickFloor('${f}')">${f}층</button>`))
+    .join('');
+}
+function pickFloor(f) { floor = f; renderFloors(); drawCards(); }
+function drawCards() {
+  const res = lastResult;
+  if (!res) return;
+  if (res.closed) {
+    $('list').innerHTML = '<div class="msg">이 시간은 학교 개방 시간이 아니에요.</div>';
+    return;
+  }
+  const rooms = res.rooms.filter((r) => floor === 'all' || String(floorOf(r.id)) === String(floor));
+  if (!rooms.length) {
+    $('list').innerHTML = '<div class="msg">해당하는 강의실이 없어요.</div>';
+    return;
+  }
+  $('list').innerHTML = rooms.map((r) => `
+    <div class="card" onclick="showDetail('${r.id}')">
+      <div class="rid bg-${r.color}">${esc(r.id)}</div>
+      <div class="mid">
+        <div class="st t-${r.color}">${esc(r.status)}</div>
+        ${r.note ? `<div class="sub">${esc(r.note.replace(/(\d\d:\d\d)까지/, '~$1'))}</div>` : ''}
+      </div>
+      <div class="ppl">${r.people}<small>현재 인원</small></div>
+      <div class="size">크기<b>${r.capacity === '' ? '-' : r.capacity + '명'}</b></div>
+      <button class="rent" onclick="event.stopPropagation(); openRental('${r.id}')" ${r.color === 'red' ? 'disabled' : ''}>대여</button>
+    </div>`).join('');
+}
+
+/* ===== 강의실 세부정보 팝업 ===== */
+function showDetail(id) {
+  const r = lastResult && lastResult.rooms.find((x) => x.id === id);
+  if (!r) return;
+  const val = (v, unit) => (v === '' || v === undefined) ? '<td class="empty">미입력</td>' : `<td>${esc(v)}${unit || ''}</td>`;
+  $('dTitle').textContent = r.id;
+  $('dInfo').innerHTML = `
+    <tr><th>강의실명</th><td>${esc(r.id)}</td></tr>
+    <tr><th>건물</th>${val(r.building)}</tr>
+    <tr><th>사용 상태</th><td class="t-${r.color}">${esc(r.status)}</td></tr>
+    <tr><th>강의실 유형</th>${val(r.type)}</tr>
+    <tr><th>현재 사용 인원</th><td>${r.people}명</td></tr>
+    <tr><th>수용인원</th>${val(r.capacity, '명')}</tr>
+    <tr><th>콘센트 개수</th>${val(r.outlets, '개')}</tr>
+    <tr><th>칠판</th>${val(r.board)}</tr>
+    <tr><th>평소 혼잡도</th>${val(r.crowd)}</tr>`;
+  $('detail').hidden = false;
+}
+function closeDetail() { $('detail').hidden = true; }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
+
+/* ===== 5. 대여 (선착순) ===== */
+const PURPOSES = ['팀플', '스터디', '개인 공부', '기타'];
+let rentRoom = '', rentPurpose = '';
+
+function myRentals() {
+  try { return JSON.parse(localStorage.getItem('rentals') || '[]'); } catch (e) { return []; }
+}
+function saveMyRentals(list) {
+  try { localStorage.setItem('rentals', JSON.stringify(list)); } catch (e) {}
+}
+function ymd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function dateLabel(str) {
+  const p = str.split('-').map(Number), d = new Date(p[0], p[1] - 1, p[2]);
+  return `${p[1]}월 ${p[2]}일 (${DAYS[d.getDay()]})`;
+}
+
+function openRental(id) {
+  rentRoom = id; rentPurpose = '';
+  $('rentTitle').textContent = id + ' 대여하기';
+  $('rAgree').checked = false;
+  $('rToday').textContent = '오늘 ' + dateLabel(ymd(new Date())) + '만 대여할 수 있어요';
+  let p = ''; for (let n = 1; n <= 10; n++) p += `<option value="${n}">${n}명</option>`;
+  $('rPeople').innerHTML = p;
+  $('purposes').innerHTML = PURPOSES.map((x) => `<button onclick="pickPurpose('${x}')">${x}</button>`).join('');
+  fillRentStart();
+  // 오늘을 조회 중이었다면 그 시간을 시작 시간으로 미리 선택
+  const t = $('time').value.replace('now:', ''), h = Number(t.split(':')[0]);
+  const todaySearch = $('day').value === DAYS[new Date().getDay()];
+  if (todaySearch && [...$('rStart').options].some((o) => Number(o.value) === h && !o.disabled)) {
+    $('rStart').value = String(h); fillRentHours();
+  }
+  go('rent');
+}
+function fillRentStart() {
+  const d = new Date(), nowMin = d.getHours() * 60 + d.getMinutes();
+  let html = '';
+  for (let h = FIRST_HOUR; h <= LAST_HOUR; h++) {
+    const past = h * 60 + 50 <= nowMin;   // 이미 끝난 시간 칸은 고를 수 없음
+    html += `<option value="${h}" ${past ? 'disabled' : ''}>${h}:00 부터${past ? ' (지남)' : ''}</option>`;
+  }
+  $('rStart').innerHTML = html;
+  const first = [...$('rStart').options].find((o) => !o.disabled);
+  if (first) $('rStart').value = first.value;
+  fillRentHours();
+}
+function fillRentHours() {
+  const h = Number($('rStart').value);
+  let html = '';
+  for (let n = 1; n <= 3 && h + n - 1 <= LAST_HOUR; n++) {
+    html += `<option value="${n}">${n}시간 (${h}:00~${h + n - 1}:50)</option>`;
+  }
+  $('rHours').innerHTML = html;
+  updateRentSummary();
+}
+function pickPurpose(x) {
+  rentPurpose = x;
+  [...$('purposes').children].forEach((b) => b.classList.toggle('on', b.textContent === x));
+  updateRentSummary();
+}
+function updateRentSummary() {
+  const h = Number($('rStart').value), n = Number($('rHours').value);
+  const ok = $('rStart').value && $('rHours').value;
+  $('rSummary').textContent = ok ? `${rentRoom} · 오늘 ${h}:00~${h + n - 1}:50` : '오늘은 남은 시간이 없어요. 다른 날짜를 골라 주세요.';
+  $('rSend').disabled = !(ok && rentPurpose && $('rAgree').checked);
+}
+function sendRental() {
+  $('rSend').disabled = true;
+  api('rent', [rentRoom, $('rStart').value, $('rHours').value, $('rPeople').value, rentPurpose])
+    .then((res) => {
+      res.people = $('rPeople').value; res.purpose = rentPurpose;
+      const list = myRentals(); list.push(res); saveMyRentals(list);
+      toast(`${res.id} ${res.start}~${res.end} 대여했어요`);
+      $('rAgree').checked = false;
+      showRentedRoom(res);
+    })
+    .catch((err) => { toast(err && err.message ? err.message : '대여하지 못했어요'); updateRentSummary(); });
+}
+// 대여 직후 조회 화면으로 돌아가 바로 '사용중'과 인원이 보이게 다시 조회
+function showRentedRoom(res) {
+  const d = new Date();
+  const nowHM = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  $('building').value = res.id.match(/^[A-Z]+/)[0];
+  floor = 'all';
+  updateTitle();
+  go('search');
+  if (res.start <= nowHM && nowHM < res.end) {
+    setNowAndSearch();                                   // 지금 사용하는 대여 → 현재 시각으로
+  } else {
+    setDayTime(DAYS[d.getDay()], res.start.slice(0, 2) + ':00');   // 나중 대여 → 그 시간 칸으로
+    search();
+  }
+}
+/* ===== 6. 내 대여 ===== */
+function openMine() {
+  go('mine');
+  const today = ymd(new Date());
+  let list = myRentals().filter((r) => r.date >= today);   // 지난 날짜 대여는 정리
+  saveMyRentals(list);
+  renderMine(list, null);
+  if (!list.length) return;
+  // 서버에서 관리자 취소 여부 확인
+  call('rentalStatus', [list.map((r) => ({ row: r.row, token: r.token }))], (st) => {
+    list = list.filter((r, i) => st[i] !== 'missing');
+    const status = st.filter((x) => x !== 'missing');
+    saveMyRentals(list);
+    renderMine(list, status);
+  });
+}
+function renderMine(list, status) {
+  if (!list.length) {
+    $('myList').innerHTML = '<p class="msg">신청한 대여가 없어요.<br>강의실 목록에서 대여 버튼을 눌러 신청할 수 있어요.</p>';
+    return;
+  }
+  const d = new Date(), today = ymd(d), nowHM = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const order = list.map((r, i) => i).sort((a, b) => (list[a].date + list[a].start).localeCompare(list[b].date + list[b].start));
+  $('myList').innerHTML = order.map((i) => {
+    const r = list[i], st = status ? status[i] : 'active';
+    if (st === 'cancelled') {
+      return `<div class="my-item off"><div class="what"><b>${esc(r.id)}<span class="tag cancel">취소됨</span></b>
+        <small>${dateLabel(r.date)} ${r.start}~${r.end} · 관리자가 취소했어요</small></div>
+        <button onclick="removeMine(${i})">지우기</button></div>`;
+    }
+    const ing = r.date === today && r.start <= nowHM && nowHM < r.end;
+    const tag = ing ? '<span class="tag now">사용 중</span>' : '<span class="tag soon">예정</span>';
+    const extra = [r.people ? r.people + '명' : '', r.purpose || ''].filter(Boolean).join(' · ');
+    return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>
+      <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra ? ' · ' + esc(extra) : ''}</small></div>
+      <button onclick="cancelMyRental(${i})">취소</button></div>`;
+  }).join('') + (status ? '' : '<p class="note">상태 확인 중...</p>');
+}
+function removeMine(i) {
+  const list = myRentals(); list.splice(i, 1); saveMyRentals(list); openMine();
+}
+function cancelMyRental(i) {
+  const list = myRentals(), r = list[i];
+  if (!r || !confirm(`${r.id} ${dateLabel(r.date)} ${r.start}~${r.end} 대여를 취소할까요?`)) return;
+  call('cancelRental', [r.row, r.token], (ok) => {
+    list.splice(i, 1); saveMyRentals(list);
+    toast(ok ? '대여를 취소했어요' : '이미 취소된 대여예요');
+    openMine();
+  });
+}
+function backToSearch() { go('search'); search(); }
+
+/* ===== 3. 강의실(QR) 화면 ===== */
+function openRoom(id) {
+  go('room');
+  $('roomBody').innerHTML = '<div class="msg">불러오는 중...</div>';
+  try { myCheckin = JSON.parse(localStorage.getItem('checkin') || 'null'); } catch (e) { myCheckin = null; }
+  call('getRoom', [id], (r) => renderRoom(id, r));
+}
+function renderRoom(id, r) {
+  if (!r) { $('roomBody').innerHTML = '<div class="msg">등록되지 않은 강의실이에요.</div>'; return; }
+  const mine = myCheckin && myCheckin.id === id;
+  const canUse = r.color === 'green' || r.color === 'orange';
+  let action;
+  if (mine) {
+    action = `<p>체크인돼 있어요. ${esc(myCheckin.expire)}에 자동으로 끝나요.</p>
+      <button class="wide blue" onclick="doCheckOut('${id}')">퇴실하기</button>`;
+  } else if (canUse) {
+    action = `
+      <div class="stepper">함께 온 인원
+        <button onclick="setPeople(-1)">−</button><b id="ppl">${people}명</b><button onclick="setPeople(1)">+</button>
+      </div>
+      <div class="rules"><b>이용 수칙</b>
+        <ul><li>퇴실할 때 불을 꺼 주세요</li><li>전열기구는 쓸 수 없어요</li><li>책상은 사용 후 원래 자리로</li></ul>
+        <label><input type="checkbox" id="agree" onchange="$('ciBtn').disabled=!this.checked"> 수칙을 확인했어요</label>
+      </div>
+      <button class="wide blue" id="ciBtn" disabled onclick="doCheckIn('${id}')">체크인하기</button>`;
+  } else {
+    action = `<p>지금은 체크인할 수 없어요.</p>`;
+  }
+  $('roomBody').innerHTML = `
+    <div class="panel">
+      <p class="big">${esc(id)}</p>
+      <span class="chip c-${r.color}">${esc(r.status)}</span>
+      <p class="sub" style="color:var(--muted)">현재 사용 인원 ${r.people}명 · 크기 ${r.capacity === '' ? '-' : r.capacity + '명'}${r.note ? ' · ' + esc(r.note) : ''}</p>
+    </div>
+    <div class="panel">${action}
+      <button class="wide line" onclick="openReport('${id}')">이 강의실을 쓸 수 없어요</button>
+    </div>`;
+}
+function setPeople(d) { people = Math.min(10, Math.max(1, people + d)); $('ppl').textContent = people + '명'; }
+function doCheckIn(id) {
+  $('ciBtn').disabled = true;
+  call('checkIn', [id, people], (res) => {
+    myCheckin = { id: id, row: res.row, expire: res.expire };
+    try { localStorage.setItem('checkin', JSON.stringify(myCheckin)); } catch (e) {}
+    toast(id + ' 체크인했어요');
+    openRoom(id);
+  });
+}
+function doCheckOut(id) {
+  call('checkOut', [id, myCheckin.row], () => {
+    myCheckin = null;
+    try { localStorage.removeItem('checkin'); } catch (e) {}
+    toast('퇴실했어요. 불 끄는 것 잊지 마세요!');
+    openRoom(id);
+  });
+}
+
+/* ===== 4. 신고 화면 ===== */
+function openReport(roomId) {
+  go('report');
+  reportReason = '';
+  $('repEtc').hidden = true; $('repEtc').value = '';
+  renderReasons();
+  if (roomId) {
+    const code = roomId.match(/^[A-Z]+/)[0];
+    $('repBuilding').value = code;
+    loadReportRooms(roomId);
+  }
+}
+function renderReasons() {
+  $('reasons').innerHTML = REASONS.map((r) =>
+    `<button class="${reportReason === r ? 'on' : ''}" onclick="pickReason('${r}')">${r}</button>`).join('');
+}
+function pickReason(r) { reportReason = r; $('repEtc').hidden = r !== '기타'; renderReasons(); }
+function loadReportRooms(selected) {
+  const code = $('repBuilding').value;
+  if (!code) { $('repRoom').innerHTML = '<option value="">건물을 먼저 골라 주세요</option>'; return; }
+  $('repRoom').innerHTML = '<option value="">불러오는 중...</option>';
+  call('listRooms', [code], (ids) => {
+    $('repRoom').innerHTML = '<option value="">강의실 선택</option>' + ids.map((i) => `<option>${i}</option>`).join('');
+    if (typeof selected === 'string') $('repRoom').value = selected;
+  });
+}
+function sendReport() {
+  const id = $('repRoom').value;
+  let reason = reportReason === '기타' ? ($('repEtc').value.trim() || '기타') : reportReason;
+  if (!id) { toast('강의실을 골라 주세요'); return; }
+  if (!reason) { toast('사유를 골라 주세요'); return; }
+  $('repSend').disabled = true;
+  call('report', [id, reason], () => {
+    $('repSend').disabled = false;
+    toast('신고를 보냈어요. 감사합니다!');
+    go('home');
+  });
+  setTimeout(() => { $('repSend').disabled = false; }, 4000);
+}
+
+/* ===== 자동 새로고침: 조회 화면을 보고 있으면 5분마다 ===== */
+const REFRESH_MS = 5 * 60 * 1000;
+setInterval(() => {
+  if (document.hidden || $('search').hidden || !$('list').querySelector('.card')) return;
+  // '현재' 시각으로 보고 있었다면 새 현재 시각으로, 아니면 고른 시간 그대로 다시 조회
+  if ($('time').value.indexOf('now:') === 0) setNowAndSearch(); else search();
+}, REFRESH_MS);
+
+/* ===== 시작 ===== */
+fillSelects();
+buildMap();
+if (QR_ROOM) openRoom(QR_ROOM); else go('home');
+api('visit', [QR_ROOM]).catch(() => {});   // 방문 기록 (실패해도 화면에는 영향 없음)
+</script>
+</body>
+</html>
