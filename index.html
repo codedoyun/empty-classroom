@@ -132,7 +132,6 @@
   .sheet .close { margin-top: 14px; }
 
   /* 대여 화면 */
-  #purposes button.on { border-color: var(--blue); color: var(--blue); background: #E6EDFA; }
   .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.5; }
   .summary { font-weight: 800; margin: 4px 0 12px; }
   .my-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
@@ -207,8 +206,6 @@
     <select id="rHours" class="field" onchange="updateRentSummary()"></select>
     <label class="small">인원</label>
     <select id="rPeople" class="field"></select>
-    <label class="small">목적</label>
-    <div class="reasons" id="purposes"></div>
     <div class="rules"><b>대여 수칙</b>
       <ul><li>선착순이에요. 먼저 신청한 사람이 우선이에요</li>
           <li>못 쓰게 되면 꼭 아래 '내 대여'에서 취소해 주세요</li>
@@ -466,8 +463,7 @@ function closeDetail() { $('detail').hidden = true; }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
 
 /* ===== 5. 대여 (선착순) ===== */
-const PURPOSES = ['팀플', '스터디', '개인 공부', '기타'];
-let rentRoom = '', rentPurpose = '';
+let rentRoom = '';
 
 function myRentals() {
   try { return JSON.parse(localStorage.getItem('rentals') || '[]'); } catch (e) { return []; }
@@ -484,13 +480,12 @@ function dateLabel(str) {
 }
 
 function openRental(id) {
-  rentRoom = id; rentPurpose = '';
+  rentRoom = id;
   $('rentTitle').textContent = id + ' 대여하기';
   $('rAgree').checked = false;
   $('rToday').textContent = '오늘 ' + dateLabel(ymd(new Date())) + '만 대여할 수 있어요';
   let p = ''; for (let n = 1; n <= 10; n++) p += `<option value="${n}">${n}명</option>`;
   $('rPeople').innerHTML = p;
-  $('purposes').innerHTML = PURPOSES.map((x) => `<button onclick="pickPurpose('${x}')">${x}</button>`).join('');
   fillRentStart();
   // 오늘을 조회 중이었다면 그 시간을 시작 시간으로 미리 선택
   const t = $('time').value.replace('now:', ''), h = Number(t.split(':')[0]);
@@ -521,22 +516,17 @@ function fillRentHours() {
   $('rHours').innerHTML = html;
   updateRentSummary();
 }
-function pickPurpose(x) {
-  rentPurpose = x;
-  [...$('purposes').children].forEach((b) => b.classList.toggle('on', b.textContent === x));
-  updateRentSummary();
-}
 function updateRentSummary() {
   const h = Number($('rStart').value), n = Number($('rHours').value);
   const ok = $('rStart').value && $('rHours').value;
   $('rSummary').textContent = ok ? `${rentRoom} · 오늘 ${h}:00~${h + n - 1}:50` : '오늘은 남은 시간이 없어요. 다른 날짜를 골라 주세요.';
-  $('rSend').disabled = !(ok && rentPurpose && $('rAgree').checked);
+  $('rSend').disabled = !(ok && $('rAgree').checked);
 }
 function sendRental() {
   $('rSend').disabled = true;
-  api('rent', [rentRoom, $('rStart').value, $('rHours').value, $('rPeople').value, rentPurpose])
+  api('rent', [rentRoom, $('rStart').value, $('rHours').value, $('rPeople').value])
     .then((res) => {
-      res.people = $('rPeople').value; res.purpose = rentPurpose;
+      res.people = $('rPeople').value;
       const list = myRentals(); list.push(res); saveMyRentals(list);
       toast(`${res.id} ${res.start}~${res.end} 대여했어요`);
       $('rAgree').checked = false;
@@ -591,7 +581,7 @@ function renderMine(list, status) {
     }
     const ing = r.date === today && r.start <= nowHM && nowHM < r.end;
     const tag = ing ? '<span class="tag now">사용 중</span>' : '<span class="tag soon">예정</span>';
-    const extra = [r.people ? r.people + '명' : '', r.purpose || ''].filter(Boolean).join(' · ');
+    const extra = r.people ? r.people + '명' : '';
     return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>
       <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra ? ' · ' + esc(extra) : ''}</small></div>
       <button onclick="cancelMyRental(${i})">취소</button></div>`;
