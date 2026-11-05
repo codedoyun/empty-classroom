@@ -16,7 +16,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
-  button, select, input { font: inherit; color: inherit; }
+  button, select, input, textarea { font: inherit; color: inherit; }
   .screen { max-width: 520px; margin: 0 auto; min-height: 100vh; padding-bottom: 92px; }
   [hidden] { display: none !important; }
 
@@ -113,6 +113,20 @@
     background-repeat: no-repeat; background-position: right 16px center; background-size: 12px 8px;
   }
   label.small { display: block; font-size: 14px; color: var(--muted); margin: 4px 0 6px; }
+  textarea.field { resize: vertical; min-height: 84px; line-height: 1.5; }
+  .urgent { background: var(--red-bg); color: #9E2620; border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+  .wide.ghost { background: #fff; border: 2px solid var(--blue); color: var(--blue); margin-top: 8px; }
+
+  /* 후기 화면 */
+  .stars { display: flex; gap: 6px; margin: 0 0 12px; }
+  .stars button { width: 44px; height: 44px; border: 0; background: none; font-size: 32px; line-height: 1; color: #D3D7DB; cursor: pointer; padding: 0; }
+  .stars button.on { color: #F2B01E; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 4px 0 10px; cursor: pointer; }
+  .consent { background: #F3F4F5; border-radius: 10px; padding: 12px; font-size: 13px; line-height: 1.6; margin-bottom: 10px; }
+  .tag.done { background: var(--green-bg); color: var(--green); }
+  .tag.end { background: var(--gray-bg); color: var(--ink); }
+  .my-item .btns { display: flex; gap: 6px; }
+  .my-item button.blue { background: var(--blue); border-color: var(--blue); color: #fff; }
 
   /* 강의실 세부정보 팝업 */
   .card { cursor: pointer; }
@@ -241,8 +255,44 @@
     <select id="repRoom" class="field"><option value="">건물을 먼저 골라 주세요</option></select>
     <label class="small">무엇이 문제인가요?</label>
     <div class="reasons" id="reasons"></div>
-    <input id="repEtc" class="field" maxlength="40" placeholder="기타 사유를 짧게 적어 주세요" hidden>
+    <p class="urgent" id="repUrgent" hidden></p>
+    <div id="repCountBox" hidden>
+      <label class="small">지금 사용 중인 인원 (필수)</label>
+      <input id="repCount" class="field" type="number" inputmode="numeric" min="1" max="300" placeholder="예) 5">
+    </div>
+    <label class="small" id="repDetailLabel">자세한 내용 (선택)</label>
+    <textarea id="repDetail" class="field" maxlength="300" placeholder="상황을 짧게 적어 주세요 (최대 300자)"></textarea>
     <button class="wide blue" id="repSend" onclick="sendReport()">신고 보내기</button>
+  </div>
+</section>
+
+<!-- ===================== 7. 후기 화면 ===================== -->
+<section id="review" class="screen" hidden>
+  <div class="top">
+    <button class="back" onclick="reviewBack()">‹ 돌아가기</button>
+    <h1 id="rvTitle">후기 남기기</h1>
+  </div>
+  <div class="panel">
+    <label class="small">별점</label>
+    <div class="stars" id="rvStars"></div>
+    <label class="small">후기</label>
+    <textarea id="rvText" class="field" maxlength="500" placeholder="이용하면서 좋았던 점, 불편했던 점을 알려주세요"></textarea>
+
+    <label class="check"><input type="checkbox" id="rvEntry" onchange="$('rvEvent').hidden = !this.checked"> 이벤트 응모하기 (선택)</label>
+    <div id="rvEvent" hidden>
+      <div class="consent">
+        <b>[개인정보 수집·이용 동의]</b><br>
+        수집 항목: 이름, 연락처, 학과<br>
+        목적: 후기 이벤트 당첨자 추첨 및 경품 안내<br>
+        보유 기간: 이벤트 종료 후 즉시 파기<br>
+        동의하지 않아도 후기는 제출할 수 있으며, 이벤트 응모만 제외됩니다.
+      </div>
+      <label class="check"><input type="checkbox" id="rvConsent"> 위 내용에 동의합니다</label>
+      <input id="rvName" class="field" maxlength="20" placeholder="이름" autocomplete="name">
+      <input id="rvPhone" class="field" type="tel" inputmode="numeric" maxlength="13" placeholder="010-1234-5678" autocomplete="tel">
+      <input id="rvDept" class="field" maxlength="30" placeholder="학과">
+    </div>
+    <button class="wide blue" id="rvSend" onclick="sendReview()">후기 제출하기</button>
   </div>
 </section>
 
@@ -292,9 +342,15 @@ const BUILDINGS = [
   { code: 'K', name: '김수환관', left: 72.7, top: 75.4, width: 24.5, height: 5.1 },
   { code: 'C', name: '예수성심관', left: 2.8, top: 79.2, width: 28.2, height: 5.1 }
 ];
-const REASONS = ['잠겨 있어요', '시험 배치돼 있어요', '수업·행사 중이에요', '시설이 망가졌어요', '기타'];
+// 신고 유형 (서버 Code.gs의 REPORT_TYPES와 똑같이 맞춰야 함)
+const REPORT_TYPES = ['위험', '파손', '잠김', '시간표 불일치', '이미 사용 중', '기타'];
+// 위험·파손 신고 때 함께 보여 줄 학교 연락처 (실제 부서명·전화번호로 바꾸세요)
+const URGENT_CONTACT = '학교 시설 담당 부서';
+const REVIEW_KEEP_DAYS = 7;   // 사용이 끝난 대여를 '내 대여'에 남겨 두는 기간(후기 작성용)
 
 let reportReason = '';
+let reviewRoom = '', reviewIdx = -1, reviewFrom = 'mine', rvRating = 0;
+let justCheckedOut = '';  // 방금 퇴실한 강의실 (후기 버튼 표시용)
 let lastResult = null;   // 마지막 조회 결과
 let floor = 'all';      // 선택한 층
 let people = 1;
@@ -303,7 +359,7 @@ let myCheckin = null;   // { id, row, expire }
 /* ===== 공통 ===== */
 const $ = (id) => document.getElementById(id);
 function go(name) {
-  ['home', 'search', 'room', 'report', 'rent', 'mine'].forEach((s) => { $(s).hidden = s !== name; });
+  ['home', 'search', 'room', 'report', 'rent', 'mine', 'review'].forEach((s) => { $(s).hidden = s !== name; });
   window.scrollTo(0, 0);
 }
 function toast(msg) {
@@ -552,8 +608,8 @@ function showRentedRoom(res) {
 /* ===== 6. 내 대여 ===== */
 function openMine() {
   go('mine');
-  const today = ymd(new Date());
-  let list = myRentals().filter((r) => r.date >= today);   // 지난 날짜 대여는 정리
+  const keep = new Date(); keep.setDate(keep.getDate() - REVIEW_KEEP_DAYS);
+  let list = myRentals().filter((r) => r.date >= ymd(keep));   // 오래된 대여는 정리 (최근 것은 후기용으로 남김)
   saveMyRentals(list);
   renderMine(list, null);
   if (!list.length) return;
@@ -579,11 +635,18 @@ function renderMine(list, status) {
         <small>${dateLabel(r.date)} ${r.start}~${r.end} · 관리자가 취소했어요</small></div>
         <button onclick="removeMine(${i})">지우기</button></div>`;
     }
+    const extra = r.people ? r.people + '명' : '';
+    const when = `<small>${dateLabel(r.date)} ${r.start}~${r.end}${extra ? ' · ' + esc(extra) : ''}</small>`;
+    const ended = r.date < today || (r.date === today && r.end <= nowHM);
+    if (ended) {   // 사용이 끝난 대여 → 후기 남기기
+      const tag = r.reviewed ? '<span class="tag done">후기 완료</span>' : '<span class="tag end">사용 끝</span>';
+      const btn = r.reviewed ? `<button onclick="removeMine(${i})">지우기</button>`
+                             : `<button class="blue" onclick="openReview('${r.id}', ${i})">후기</button>`;
+      return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>${when}</div>${btn}</div>`;
+    }
     const ing = r.date === today && r.start <= nowHM && nowHM < r.end;
     const tag = ing ? '<span class="tag now">사용 중</span>' : '<span class="tag soon">예정</span>';
-    const extra = r.people ? r.people + '명' : '';
-    return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>
-      <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra ? ' · ' + esc(extra) : ''}</small></div>
+    return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>${when}</div>
       <button onclick="cancelMyRental(${i})">취소</button></div>`;
   }).join('') + (status ? '' : '<p class="note">상태 확인 중...</p>');
 }
@@ -629,6 +692,10 @@ function renderRoom(id, r) {
   } else {
     action = `<p>지금은 체크인할 수 없어요.</p>`;
   }
+  if (!mine && justCheckedOut === id) {
+    action = `<p>이용은 어떠셨어요? 후기를 남겨 주세요.</p>
+      <button class="wide ghost" onclick="openReview('${id}', -1, 'room')">후기 남기기</button>` + action;
+  }
   $('roomBody').innerHTML = `
     <div class="panel">
       <p class="big">${esc(id)}</p>
@@ -652,6 +719,7 @@ function doCheckIn(id) {
 function doCheckOut(id) {
   call('checkOut', [id, myCheckin.row], () => {
     myCheckin = null;
+    justCheckedOut = id;
     try { localStorage.removeItem('checkin'); } catch (e) {}
     toast('퇴실했어요. 불 끄는 것 잊지 마세요!');
     openRoom(id);
@@ -662,8 +730,8 @@ function doCheckOut(id) {
 function openReport(roomId) {
   go('report');
   reportReason = '';
-  $('repEtc').hidden = true; $('repEtc').value = '';
-  renderReasons();
+  $('repDetail').value = ''; $('repCount').value = '';
+  pickReason('');
   if (roomId) {
     const code = roomId.match(/^[A-Z]+/)[0];
     $('repBuilding').value = code;
@@ -671,10 +739,19 @@ function openReport(roomId) {
   }
 }
 function renderReasons() {
-  $('reasons').innerHTML = REASONS.map((r) =>
+  $('reasons').innerHTML = REPORT_TYPES.map((r) =>
     `<button class="${reportReason === r ? 'on' : ''}" onclick="pickReason('${r}')">${r}</button>`).join('');
 }
-function pickReason(r) { reportReason = r; $('repEtc').hidden = r !== '기타'; renderReasons(); }
+function pickReason(r) {
+  reportReason = r;
+  // 위험·파손은 앱 신고만으로는 늦을 수 있어 학교 연락처를 함께 안내
+  const urgent = r === '위험' || r === '파손';
+  $('repUrgent').hidden = !urgent;
+  if (urgent) $('repUrgent').textContent = `다치거나 위험한 상황이면 신고와 함께 ${URGENT_CONTACT}에 바로 연락해 주세요.`;
+  $('repCountBox').hidden = r !== '이미 사용 중';
+  $('repDetailLabel').textContent = r === '기타' ? '자세한 내용 (필수)' : '자세한 내용 (선택)';
+  renderReasons();
+}
 function loadReportRooms(selected) {
   const code = $('repBuilding').value;
   if (!code) { $('repRoom').innerHTML = '<option value="">건물을 먼저 골라 주세요</option>'; return; }
@@ -684,18 +761,90 @@ function loadReportRooms(selected) {
     if (typeof selected === 'string') $('repRoom').value = selected;
   });
 }
+// 서버가 아직 예전 버전이라 새 함수를 모를 때 나오는 오류인지 확인
+function isOldServer(err) { return !!(err && /알 수 없는 요청/.test(err.message)); }
+
 function sendReport() {
-  const id = $('repRoom').value;
-  let reason = reportReason === '기타' ? ($('repEtc').value.trim() || '기타') : reportReason;
+  const id = $('repRoom').value, type = reportReason, detail = $('repDetail').value.trim();
   if (!id) { toast('강의실을 골라 주세요'); return; }
-  if (!reason) { toast('사유를 골라 주세요'); return; }
+  if (!type) { toast('신고 유형을 골라 주세요'); return; }
+  if (type === '기타' && !detail) { toast('기타 사유를 적어 주세요'); return; }
+  let count = '';
+  if (type === '이미 사용 중') {
+    count = parseInt($('repCount').value, 10);
+    if (!(count >= 1 && count <= 300)) { toast('사용 인원을 1명 이상으로 입력해 주세요'); return; }
+  }
   $('repSend').disabled = true;
-  call('report', [id, reason], () => {
-    $('repSend').disabled = false;
-    toast('신고를 보냈어요. 감사합니다!');
-    go('home');
-  });
-  setTimeout(() => { $('repSend').disabled = false; }, 4000);
+  api('submitReport', [{ room: id, type: type, detail: detail, count: count }])
+    .catch((err) => {
+      // 예전 서버면 기존 report 함수로 보냄 (유형+내용을 사유 칸에)
+      if (isOldServer(err)) return api('report', [id, (type + (detail ? ': ' + detail : '')).slice(0, 40)]);
+      throw err;
+    })
+    .then((msg) => {
+      toast(typeof msg === 'string' ? msg : '신고가 접수됐어요. 감사합니다!');
+      go('home');
+    })
+    .catch((err) => toast('오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요')))
+    .finally(() => { $('repSend').disabled = false; });
+}
+
+/* ===== 7. 후기 ===== */
+// from: 'mine'(내 대여에서) 또는 'room'(퇴실 직후 강의실 화면에서)
+function openReview(room, idx, from) {
+  reviewRoom = room; reviewIdx = idx; reviewFrom = from || 'mine'; rvRating = 0;
+  $('rvTitle').textContent = room + ' 후기 남기기';
+  ['rvText', 'rvName', 'rvPhone', 'rvDept'].forEach((k) => { $(k).value = ''; });
+  $('rvEntry').checked = false; $('rvConsent').checked = false; $('rvEvent').hidden = true;
+  $('rvSend').disabled = false;
+  renderStars();
+  go('review');
+}
+function reviewBack() { if (reviewFrom === 'room') openRoom(reviewRoom); else openMine(); }
+function renderStars() {
+  let h = '';
+  for (let n = 1; n <= 5; n++) {
+    h += `<button class="${n <= rvRating ? 'on' : ''}" onclick="rvRating=${n}; renderStars()" aria-label="별 ${n}개">★</button>`;
+  }
+  $('rvStars').innerHTML = h;
+}
+// 010-1234-5678 형태로 맞춤 (숫자만 보내면 시트가 앞의 0을 지워 버림)
+function formatPhone(s) {
+  const d = String(s).replace(/\D/g, '');
+  if (d.length === 11) return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
+  if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+  return String(s).trim();
+}
+function sendReview() {
+  const text = $('rvText').value.trim();
+  const entry = $('rvEntry').checked;
+  if (!rvRating) { toast('별점을 골라 주세요'); return; }
+  if (!text) { toast('후기 내용을 입력해 주세요'); return; }
+  const form = { room: reviewRoom, rating: rvRating, text: text, entry: entry ? 'Y' : 'N', consent: 'N', name: '', phone: '', dept: '' };
+  if (entry) {   // 이름·연락처·학과는 응모 + 동의일 때만 보냄
+    if (!$('rvConsent').checked) { toast('이벤트 응모를 하려면 개인정보 수집에 동의해 주세요'); return; }
+    form.consent = 'Y';
+    form.name = $('rvName').value.trim();
+    form.dept = $('rvDept').value.trim();
+    form.phone = formatPhone($('rvPhone').value);
+    if (!form.name || !form.dept) { toast('이름과 학과를 입력해 주세요'); return; }
+    if (!/^01[016789]-\d{3,4}-\d{4}$/.test(form.phone)) { toast('연락처 형식을 확인해 주세요. 예) 010-1234-5678'); return; }
+  }
+  $('rvSend').disabled = true;
+  api('submitReview', [form])
+    .then((msg) => {
+      if (reviewIdx >= 0) {
+        const list = myRentals();
+        if (list[reviewIdx]) { list[reviewIdx].reviewed = true; saveMyRentals(list); }
+      }
+      if (reviewFrom === 'room') justCheckedOut = '';
+      toast(typeof msg === 'string' ? msg : '후기가 제출됐어요. 감사합니다!');
+      reviewBack();
+    })
+    .catch((err) => {
+      $('rvSend').disabled = false;
+      toast(isOldServer(err) ? '후기 기능은 서버 업데이트 후에 쓸 수 있어요' : '오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요'));
+    });
 }
 
 /* ===== 자동 새로고침: 조회 화면을 보고 있으면 5분마다 ===== */
