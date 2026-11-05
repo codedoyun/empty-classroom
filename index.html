@@ -39,13 +39,16 @@
 
   /* ── 조회 화면 ── */
   .top { padding: 14px 16px 12px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
-  .back { border: 0; background: none; color: var(--blue); font-weight: 700; padding: 4px 0; cursor: pointer; }
+  .back { border: 0; background: none; color: var(--ink); font-weight: 700; padding: 4px 0; cursor: pointer; }
   h1 { font-size: 22px; margin: 6px 0 12px; }
   .row { display: flex; gap: 8px; }
   .row select { flex: 1; min-width: 0; padding: 11px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 16px; }
-  .search { width: 52px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-size: 20px; cursor: pointer; }
-  .now-btn { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--blue); background: #fff;
-             color: var(--blue); border-radius: 10px; font-weight: 700; cursor: pointer; }
+  .search { width: 44px; border: 0; border-radius: 10px; background: none; color: #8A8F95; cursor: pointer; padding: 0;
+             display: flex; align-items: center; justify-content: center; }
+  .search svg { width: 26px; height: 26px; }
+  .search:active { color: var(--ink); }
+  .now-btn { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--ink); background: #fff;
+             color: var(--ink); border-radius: 10px; font-weight: 700; cursor: pointer; }
   .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px 0; font-size: 13px; color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   .result-info { padding: 10px 16px 0; font-size: 14px; color: var(--muted); }
@@ -57,7 +60,7 @@
   .floors::-webkit-scrollbar { display: none; }
   .floors button { flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
                    background: #fff; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
-  .floors button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .floors button.on { background: #ECEEF0; border-color: #C9CDD1; color: var(--ink); }
 
   /* 강의실 카드: [강의실번호(상태색 배경)] [상태] [현재 인원] [크기(회색)] */
   .card { display: flex; align-items: center; gap: 7px; background: var(--card); border: 1px solid var(--line);
@@ -184,7 +187,9 @@
     <div class="row">
       <select id="day"></select>
       <select id="time"></select>
-      <button class="search" onclick="search()" aria-label="검색">🔍</button>
+      <button class="search" onclick="search()" aria-label="검색">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.4 15.4 20.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
     </div>
     <button class="now-btn" onclick="setNowAndSearch()">현재 시간으로 선택하기</button>
   </div>
@@ -195,7 +200,7 @@
     <span><i style="background:var(--gray)"></i>수업중</span>
   </div>
   <div class="result-info" id="resultInfo"></div>
-  <div class="list" id="list"><div class="msg">요일과 시간을 고르고 🔍를 눌러 주세요.</div></div>
+  <div class="list" id="list"><div class="msg">요일과 시간을 고르고 돋보기를 눌러 주세요.</div></div>
 </section>
 
 <!-- ===================== 3. 강의실 화면 (QR로 들어올 때) ===================== -->
