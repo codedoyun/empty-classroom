@@ -20,10 +20,23 @@
   [hidden] { display: none !important; }
 
   /* ── 첫 화면: 지도 ── */
-  .map { position: relative; }
-  .map img { display: block; width: 100%; height: auto; }
-  .hot { position: absolute; border: 0; background: transparent; border-radius: 999px; cursor: pointer; padding: 0; }
-  .hot:active { background: rgba(30, 79, 182, .15); }
+  #home { background: #F4F5F6; display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-height: 0; }
+  #home[hidden] { display: none !important; }
+  .home-head { padding: 24px 18px 14px; }
+  .home-head h1 { font-size: 22px; margin: 0 0 6px; }
+  .home-head p { margin: 0; font-size: 14px; color: var(--muted); }
+  /* 지도 카드가 남는 화면 높이를 채우고, 지도 그림은 잘리지 않게 카드 가운데에 통째로 보여줌 */
+  .map-card { flex: 1; min-height: 0; margin: 0 16px 12px; background: #fff; border: 1px solid #E3E5E8; border-radius: 18px;
+              overflow: hidden; display: flex; align-items: center; justify-content: center; container-type: size; }
+  /* 지도 그림 위아래에 이름표 자리를 두고, 이름표와 건물을 선으로 연결 */
+  .map { position: relative; width: min(100cqw, 100cqh * 941 / 1375); aspect-ratio: 941 / 1375; }
+  .map img { position: absolute; left: 0; top: 17.455%; width: 100%; height: 68.000%; display: block; }
+  .map svg.leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  /* 건물 이름표: 연한 회색 네모 + 검은 글씨, 건물 위 가운데에 놓임 */
+  .pin { position: absolute; transform: translate(-50%, -50%); z-index: 1; padding: 4px 7px; border: 1px solid #C9CDD2; border-radius: 4px;
+         background: #EEF0F2; color: #1D2329; font-size: 11.5px; font-weight: 700; line-height: 1.2; white-space: nowrap;
+         cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+  .pin:active { background: #DDE1E5; }
   .map-error { padding: 40px 20px; text-align: center; color: var(--muted); }
 
   /* ── 하단 탭바: 회색 아이콘 + 글씨 (모든 화면 공통) ── */
@@ -38,13 +51,16 @@
 
   /* ── 조회 화면 ── */
   .top { padding: 14px 16px 12px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
-  .back { border: 0; background: none; color: var(--blue); font-weight: 700; padding: 4px 0; cursor: pointer; }
+  .back { border: 0; background: none; color: var(--ink); font-weight: 700; padding: 4px 0; cursor: pointer; }
   h1 { font-size: 22px; margin: 6px 0 12px; }
   .row { display: flex; gap: 8px; }
   .row select { flex: 1; min-width: 0; padding: 11px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-size: 16px; }
-  .search { width: 52px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-size: 20px; cursor: pointer; }
-  .now-btn { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--blue); background: #fff;
-             color: var(--blue); border-radius: 10px; font-weight: 700; cursor: pointer; }
+  .search { width: 44px; border: 0; border-radius: 10px; background: none; color: #8A8F95; cursor: pointer; padding: 0;
+             display: flex; align-items: center; justify-content: center; }
+  .search svg { width: 26px; height: 26px; }
+  .search:active { color: var(--ink); }
+  .now-btn { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid var(--ink); background: #fff;
+             color: var(--ink); border-radius: 10px; font-weight: 700; cursor: pointer; }
   .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px 0; font-size: 13px; color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   .result-info { padding: 10px 16px 0; font-size: 14px; color: var(--muted); }
@@ -56,7 +72,7 @@
   .floors::-webkit-scrollbar { display: none; }
   .floors button { flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
                    background: #fff; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
-  .floors button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .floors button.on { background: #ECEEF0; border-color: #C9CDD1; color: var(--ink); }
 
   /* 강의실 카드: [강의실번호(상태색 배경)] [상태] [현재 인원] [크기(회색)] */
   .card { display: flex; align-items: center; gap: 7px; background: var(--card); border: 1px solid var(--line);
@@ -154,8 +170,14 @@
 
 <!-- ===================== 1. 첫 화면 (지도) ===================== -->
 <section id="home" class="screen">
-  <div class="map" id="map">
-    <img id="mapImg" src="<?!= mapUrl ?>" alt="캠퍼스 지도">
+  <div class="home-head">
+    <h1>가톨릭대학교 성심교정</h1>
+    <p>건물 이름을 누르면 빈 강의실을 볼 수 있어요.</p>
+  </div>
+  <div class="map-card" id="mapCard">
+    <div class="map" id="map">
+      <img id="mapImg" src="<?!= mapUrl ?>" alt="성심교정 지도">
+    </div>
   </div>
 </section>
 
@@ -169,7 +191,9 @@
     <div class="row">
       <select id="day"></select>
       <select id="time"></select>
-      <button class="search" onclick="search()" aria-label="검색">🔍</button>
+      <button class="search" onclick="search()" aria-label="검색">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.4 15.4 20.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
     </div>
     <button class="now-btn" onclick="setNowAndSearch()">현재 시간으로 선택하기</button>
   </div>
@@ -180,7 +204,7 @@
     <span><i style="background:var(--gray)"></i>수업중</span>
   </div>
   <div class="result-info" id="resultInfo"></div>
-  <div class="list" id="list"><div class="msg">요일과 시간을 고르고 🔍를 눌러 주세요.</div></div>
+  <div class="list" id="list"><div class="msg">요일과 시간을 고르고 돋보기를 눌러 주세요.</div></div>
 </section>
 
 <!-- ===================== 3. 강의실 화면 (QR로 들어올 때) ===================== -->
@@ -292,18 +316,20 @@ const FIRST_HOUR = 9;    // 첫 시간 칸 9:00~9:50
 const LAST_HOUR = 21;    // 마지막 시간 칸 21:00~21:50 (저녁 10시 전까지)
 
 // 지도 위 글자(라벨)의 위치 (campus_map.jpg 기준 %)
+// x, y: 이름표 위치(%), ax, ay: 선이 가리키는 건물 위치(%) — 지도 영역(그림 + 위아래 여백) 기준
+const MAP_W = 941, MAP_H = 1375;
 const BUILDINGS = [
-  { code: 'SH', name: '성심관', left: 74.5, top: 2.2, width: 22.7, height: 5.1 },
-  { code: 'NP', name: '약학관', left: 2.8, top: 10.1, width: 22.8, height: 5.1 },
-  { code: 'CH', name: '콘서트홀', left: 70.7, top: 19.8, width: 26.5, height: 5.1 },
-  { code: 'B', name: '학생회관', left: 72.7, top: 42.2, width: 24.5, height: 5.1 },
-  { code: 'D', name: '다솔관', left: 2.8, top: 44.7, width: 20.8, height: 5.1 },
-  { code: 'BA', name: '밤비노관', left: 70.9, top: 50.5, width: 26.3, height: 5.1 },
-  { code: 'V', name: '비르투스관', left: 2.8, top: 55.0, width: 28.1, height: 5.1 },
-  { code: 'N', name: '니콜스관', left: 72.5, top: 58.8, width: 24.7, height: 5.1 },
-  { code: 'M', name: '마리아관', left: 72.2, top: 67.1, width: 25.0, height: 5.1 },
-  { code: 'K', name: '김수환관', left: 72.7, top: 75.4, width: 24.5, height: 5.1 },
-  { code: 'C', name: '예수성심관', left: 2.8, top: 79.2, width: 28.2, height: 5.1 }
+  { code: 'N', name: '니콜스관', x: 43.1, y: 82.3, ax: 46.8, ay: 49.1 },
+  { code: 'M', name: '마리아관', x: 89.1, y: 72.7, ax: 70.1, ay: 51.6 },
+  { code: 'K', name: '김수환관', x: 22.7, y: 80.5, ax: 35.1, ay: 58.2 },
+  { code: 'D', name: '다솔관', x: 23.5, y: 24.7, ax: 28.7, ay: 36.4 },
+  { code: 'B', name: '학생회관', x: 45.7, y: 12.4, ax: 55.8, ay: 35.6 },
+  { code: 'V', name: '비르투스관', x: 13.0, y: 30.8, ax: 31.9, ay: 44.4 },
+  { code: 'BA', name: '밤비노관', x: 35.5, y: 18.5, ax: 49.4, ay: 41.5 },
+  { code: 'C', name: '예수성심관', x: 11.7, y: 86.6, ax: 10.1, ay: 57.1 },
+  { code: 'NP', name: '약학관', x: 64.3, y: 9.8, ax: 57.9, ay: 18.5 },
+  { code: 'SH', name: '성심관', x: 74.5, y: 15.9, ax: 69.1, ay: 18.5 },
+  { code: 'CH', name: '콘서트홀', x: 85.2, y: 9.8, ax: 84.0, ay: 22.2 }
 ];
 const REASONS = ['잠겨 있어요', '시험 배치돼 있어요', '수업·행사 중이에요', '시설이 망가졌어요', '기타'];
 
@@ -340,14 +366,26 @@ function buildMap() {
     $('map').innerHTML = '<div class="map-error">지도 이미지를 불러오지 못했어요.<br>Code.gs의 MAP_FILE_ID를 확인해 주세요.</div>';
     return;
   }
+  // 이름표와 건물을 잇는 선 (건물 쪽 끝에 작은 점)
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'leaders');
+  svg.setAttribute('viewBox', `0 0 ${MAP_W} ${MAP_H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  BUILDINGS.forEach((b) => {
+    const x1 = b.x * MAP_W / 100, y1 = b.y * MAP_H / 100, x2 = b.ax * MAP_W / 100, y2 = b.ay * MAP_H / 100;
+    svg.insertAdjacentHTML('beforeend',
+      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#2B3036" stroke-width="2.6" stroke-linecap="round"/>` +
+      `<circle cx="${x2}" cy="${y2}" r="7" fill="#2B3036" stroke="#fff" stroke-width="3"/>`);
+  });
+  $('map').appendChild(svg);
   BUILDINGS.forEach((b) => {
     const btn = document.createElement('button');
-    btn.className = 'hot';
+    btn.className = 'pin';
+    btn.textContent = b.name;
     btn.setAttribute('aria-label', b.name + ' 빈 강의실 보기');
-    btn.style.left = b.left + '%';
-    btn.style.top = (b.top - 0.8) + '%';          // 누르기 쉽게 위아래로 조금 넓힘
-    btn.style.width = b.width + '%';
-    btn.style.height = (b.height + 1.6) + '%';
+    btn.style.left = b.x + '%';
+    btn.style.top = b.y + '%';
     btn.onclick = () => openSearch(b.code);
     $('map').appendChild(btn);
   });
