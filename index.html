@@ -63,6 +63,7 @@
   .stars svg { width: 38px; height: 38px; }
   textarea.field { resize: vertical; min-height: 110px; line-height: 1.5; }
   .count { text-align: right; font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
+  .count.ok { color: var(--green); }
   .entry { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 14px; }
   .check { display: flex; gap: 8px; align-items: flex-start; font-size: 15px; font-weight: 700; margin-bottom: 12px; cursor: pointer; }
   .check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand); }
@@ -384,8 +385,8 @@
     <label class="small">별점</label>
     <div class="stars" id="stars"></div>
     <label class="small">후기</label>
-    <textarea id="rvText" class="field" maxlength="500" placeholder="콘센트, 조용함, 분위기 등 써 보니 어땠는지 알려 주세요" oninput="$('rvCount').textContent = this.value.length + ' / 500'"></textarea>
-    <div class="count" id="rvCount">0 / 500</div>
+    <textarea id="rvText" class="field" maxlength="500" placeholder="콘센트, 조용함, 분위기 등 사용해보니 어땠는지 100자 이상 작성해주세요!" oninput="updateReviewCount()"></textarea>
+    <div class="count" id="rvCount">0자 · 100자 이상 써 주세요</div>
 
     <div class="entry">
       <label class="check"><input type="checkbox" id="rvEntry" checked onchange="$('entryBox').hidden = !this.checked"> 이벤트에 응모할게요</label>
@@ -1011,10 +1012,17 @@ function openReview() {
     BUILDINGS.map((b) => `<option value="${b.code}">${b.name} (${b.code})</option>`).join('');
   $('rvRoom').innerHTML = '<option value="">건물을 먼저 골라 주세요</option>';
   ['rvText', 'rvName', 'rvDept', 'rvPhone'].forEach((id) => { $(id).value = ''; });
-  $('rvCount').textContent = '0 / 500';
+  updateReviewCount();
   $('rvEntry').checked = true; $('entryBox').hidden = false; $('rvConsent').checked = false;
   $('rvSend').disabled = false;
   pickStar(0);
+}
+// 후기 글자 수 (공백 포함, 앞뒤 공백 제외) — 100자 이상이어야 보낼 수 있음
+const REVIEW_MIN = 100;
+function updateReviewCount() {
+  const n = $('rvText').value.trim().length;
+  $('rvCount').textContent = n >= REVIEW_MIN ? `${n}자 · 보낼 수 있어요` : `${n}자 · ${REVIEW_MIN - n}자 더 써 주세요 (100자 이상)`;
+  $('rvCount').className = 'count' + (n >= REVIEW_MIN ? ' ok' : '');
 }
 function pickStar(n) {
   reviewRating = n;
@@ -1038,7 +1046,7 @@ function sendReview() {
   };
   if (!form.room) { toast('강의실을 골라 주세요'); return; }
   if (!form.rating) { toast('별점을 골라 주세요'); return; }
-  if (!form.text) { toast('후기 내용을 적어 주세요'); return; }
+  if (form.text.length < REVIEW_MIN) { toast(`후기를 100자 이상 써 주세요 (지금 ${form.text.length}자)`); return; }
   if (entry && (!form.name || !form.dept || !form.phone)) { toast('이름, 학과, 연락처를 모두 적어 주세요'); return; }
   if (entry && form.consent !== 'Y') { toast('응모하려면 개인정보 수집·이용에 동의해 주세요'); return; }
   $('rvSend').disabled = true;
