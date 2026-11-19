@@ -62,8 +62,8 @@
   .stars button.on { color: #F2B92B; }
   .stars svg { width: 38px; height: 38px; }
   textarea.field { resize: vertical; min-height: 110px; line-height: 1.5; }
-  .count { text-align: right; font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
   .count.ok { color: var(--green); }
+  .count { text-align: right; font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
   .entry { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 14px; }
   .check { display: flex; gap: 8px; align-items: flex-start; font-size: 15px; font-weight: 700; margin-bottom: 12px; cursor: pointer; }
   .check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand); }
@@ -79,6 +79,7 @@
   .map .mt { font-family: "Do Hyeon", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: 21px; }
   .map .stop { cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
   .map .stop .frame { fill: #4A515E; }
+  .map .stop .bus { transition: fill .4s; }
   .map .stop .dot { fill: #fff; stroke: var(--brand); stroke-width: 4; }
   .map .stop:active .frame, .map .stop:focus-visible .frame { fill: var(--brand-dark); }
   .map .stop:active .dot, .map .stop:focus-visible .dot { fill: var(--sun); }
@@ -133,6 +134,12 @@
   .floors button { flex: 0 0 auto; padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--line);
                    background: #fff; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
   .floors button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  /* 정렬 선택 (작고 얇게) */
+  .sorts { display: flex; gap: 6px; margin: 0 0 10px; }
+  .sorts button { flex: 0 0 auto; padding: 5px 12px; border-radius: 999px; border: 1.5px solid var(--line);
+                  background: #fff; font-size: 13px; font-weight: 700; line-height: 1.2; color: var(--muted); cursor: pointer; }
+  .sorts button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .free-line { font-size: 12px; font-weight: 700; color: var(--green); margin-top: 3px; }
 
   /* 강의실 카드 */
   .card { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 16px; padding: 8px;
@@ -241,6 +248,22 @@
   .tag { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: 2px; }
   .tag.now { background: var(--orange-bg); color: var(--orange); }
   .tag.soon { background: var(--brand-soft); color: var(--brand); }
+  .tag.over { background: var(--gray-bg); color: #4E565E; }
+  .my-item.done .what b { color: #6E7380; }
+  .my-item .done-msg { color: var(--muted); margin-top: 3px; }
+  .my-sec { font-size: 15px; font-weight: 400; color: var(--muted); margin: 0 0 4px; }
+  .my-sec.past { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .my-sec small { font-size: 12px; margin-left: 4px; }
+  .my-empty { font-size: 14px; color: var(--muted); margin: 8px 0 4px; }
+  .my-sec + .my-item { border-top: 0; }
+  .past-box summary { display: flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; margin-bottom: 0; }
+  .past-box summary::-webkit-details-marker { display: none; }
+  .past-box .arrow { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; background: var(--brand-soft); color: var(--brand);
+                     display: flex; align-items: center; justify-content: center; font-size: 15px; transition: transform .2s; }
+  .past-box[open] .arrow { transform: rotate(180deg); }
+  .past-box[open] summary { margin-bottom: 4px; }
+  .past-box summary + .my-item { border-top: 0; }
+  @media (prefers-reduced-motion: reduce) { .past-box .arrow { transition: none; } }
   .tag.cancel { background: var(--gray-bg); color: var(--gray); }
   .my-item button { padding: 8px 12px; border-radius: 10px; border: 0; background: var(--brand-soft); color: var(--brand); cursor: pointer; font-weight: 700; }
 
@@ -307,6 +330,10 @@
     <h1 id="searchTitle">빈 강의실 조회</h1>
     <select id="building" class="field"></select>
     <div class="floors" id="floors"></div>
+    <div class="sorts" id="sorts">
+      <button data-sort="basic" class="on" onclick="pickSort('basic')">기본 정렬</button>
+      <button data-sort="free" onclick="pickSort('free')">오래 쓸 수 있는 순</button>
+    </div>
     <div class="row">
       <select id="day"></select>
       <select id="time"></select>
@@ -508,7 +535,18 @@ let myCheckin = null;   // { id, row, expire }
 
 /* ===== 공통 ===== */
 const $ = (id) => document.getElementById(id);
+/* 홈 지도의 버스 색(신호등): 서버에서 건물별 단계를 받아 칠함. 실패하면 기본 노랑 그대로 */
+const BUS_COLOR = { red: '#E5574D', yellow: '#E9C35A', green: '#3DBE76' };
+function loadBusy() {
+  api('getBusyLevels', []).then((res) => {
+    BUILDINGS.forEach((b) => {
+      const el = document.querySelector(`.stop[data-code="${b.code}"] .bus`);
+      if (el) el.setAttribute('fill', BUS_COLOR[(res && res.levels && res.levels[b.code]) || 'yellow']);
+    });
+  }).catch(() => {});
+}
 function go(name) {
+  if (name === 'home' && window.mapReady) loadBusy();
   ['home', 'search', 'room', 'report', 'rent', 'mine', 'review'].forEach((s) => { $(s).hidden = s !== name; });
   const tab = name === 'mine' ? 'tabMine' : name === 'report' ? 'tabReport' : 'tabHome';
   ['tabHome', 'tabMine', 'tabReport'].forEach((t) => $(t).classList.toggle('on', t === tab));
@@ -589,7 +627,7 @@ function buildMap() {
     // 도로 위 점에서 표지판 가장자리까지 잇는 선
     const ex = Math.min(Math.max(b.sx, lx), lx + w), ey = Math.min(Math.max(b.sy, ly), ly + h);
     const by = ly + 13;                     // 버스 위쪽
-    s += `<g class="stop" role="button" tabindex="0" aria-label="${b.name} 정류장, 빈 강의실 보기"
+    s += `<g class="stop" data-code="${b.code}" role="button" tabindex="0" aria-label="${b.name} 정류장, 빈 강의실 보기"
         onclick="openSearch('${b.code}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSearch('${b.code}')}">
       <rect x="${Math.min(lx, b.sx - 12) - 4}" y="${Math.min(ly, b.sy - 12) - 4}" width="${Math.max(lx + w, b.sx + 12) - Math.min(lx, b.sx - 12) + 8}"
             height="${Math.max(ly + h, b.sy + 12) - Math.min(ly, b.sy - 12) + 8}" fill="transparent"/>
@@ -597,7 +635,7 @@ function buildMap() {
       <rect class="frame" x="${lx}" y="${ly}" width="${w}" height="${h}" rx="9" stroke="#232838" stroke-width="1.5"/>
       <rect x="${lx + 3}" y="${ly + 3}" width="${w - 6}" height="${h - 6}" rx="6" fill="#F4F2EA" stroke="#232838" stroke-width="1.3"/>
       <path d="M${lx + 3},${ly + 49}H${lx + w - 3}" stroke="#232838" stroke-width="1.3"/>
-      <rect x="${cx - 23}" y="${by}" width="46" height="23" rx="7" fill="#E9C35A" stroke="#232838" stroke-width="1.3"/>
+      <rect class="bus" x="${cx - 23}" y="${by}" width="46" height="23" rx="7" fill="#E9C35A" stroke="#232838" stroke-width="1.3"/>
       <rect x="${cx - 17}" y="${by + 5}" width="8" height="7" fill="#C9CED8" stroke="#232838" stroke-width="1.2"/>
       <rect x="${cx - 4}" y="${by + 5}" width="8" height="7" fill="#C9CED8" stroke="#232838" stroke-width="1.2"/>
       <rect x="${cx + 9}" y="${by + 5}" width="8" height="7" fill="#C9CED8" stroke="#232838" stroke-width="1.2"/>
@@ -675,7 +713,7 @@ function search() {
 function renderList(res) {
   lastResult = res;
   const live = res.isLive ? '실시간 체크인 반영' : '시간표 기준 (체크인 인원은 지금 시간에만 보여요)';
-  $('resultInfo').textContent = `${res.day}요일 ${res.time} · ${live} · 다음 수업까지 여유 많은 순`;
+  $('resultInfo').textContent = `${res.day}요일 ${res.time} · ${live}`;
   renderFloors();
   drawCards();
 }
@@ -688,6 +726,22 @@ function renderFloors() {
     .join('');
 }
 function pickFloor(f) { floor = f; renderFloors(); drawCards(); }
+/* 정렬 방식: basic = 1층부터 K101, K102 … 번호 순 / free = 지금부터 다음 수업까지 오래 쓸 수 있는 순 */
+let sortMode = 'basic';
+function pickSort(m) {
+  sortMode = m;
+  document.querySelectorAll('#sorts button').forEach((b) => b.classList.toggle('on', b.dataset.sort === m));
+  drawCards();
+}
+function roomCmp(a, b) {   // 강의실 번호 순 (K101 < K102 < K201)
+  const pa = a.id.match(/^([A-Z]+)(\d+)/), pb = b.id.match(/^([A-Z]+)(\d+)/);
+  if (!pa || !pb) return a.id.localeCompare(b.id);
+  return pa[1].localeCompare(pb[1]) || Number(pa[2]) - Number(pb[2]);
+}
+function freeText(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return (h ? h + '시간 ' : '') + (m ? m + '분' : '');
+}
 function drawCards() {
   const res = lastResult;
   if (!res) return;
@@ -695,10 +749,13 @@ function drawCards() {
     $('list').innerHTML = '<div class="msg">이 시간은 학교 개방 시간이 아니에요.</div>';
     return;
   }
-  // 상태 순서 안에서 다음 수업까지 많이 남은 강의실 먼저
   const order = { green: 0, orange: 1, red: 2, gray: 3 };
   const rooms = res.rooms.filter((r) => floor === 'all' || String(floorOf(r.id)) === String(floor))
-    .sort((a, b) => order[a.color] - order[b.color] || (b.freeMin || 0) - (a.freeMin || 0) || a.id.localeCompare(b.id));
+    .sort(sortMode === 'free'
+      // 오래 쓸 수 있는 순: 상태(비었음 → 사용중 → 사용 불가 → 수업중) 안에서 다음 수업까지 많이 남은 강의실 먼저
+      ? (a, b) => order[a.color] - order[b.color] || (b.freeMin || 0) - (a.freeMin || 0) || roomCmp(a, b)
+      // 기본 정렬: 1층부터 강의실 번호 순
+      : roomCmp);
   if (!rooms.length) {
     $('list').innerHTML = '<div class="msg">해당하는 강의실이 없어요.</div>';
     return;
@@ -709,6 +766,7 @@ function drawCards() {
       <div class="mid">
         <div class="st t-${r.color}">${esc(r.status)}</div>
         ${r.note ? `<div class="sub">${esc(r.note.replace(/(\d\d:\d\d)까지/, '~$1'))}</div>` : ''}
+        ${sortMode === 'free' && r.freeMin > 0 ? `<div class="free-line">${r.nextClass ? esc(r.nextClass) + ' 수업 전까지 ' : '저녁까지 '}${freeText(r.freeMin)}</div>` : ''}
       </div>
       <div class="ppl">${r.people}<small>현재 인원</small></div>
       <div class="size">크기<b>${r.capacity === '' ? '-' : r.capacity + '명'}</b></div>
@@ -895,10 +953,12 @@ function showRentedRoom(res) {
   }
 }
 /* ===== 6. 나의 사용 ===== */
+const HISTORY_DAYS = 30;   // 지난 사용 기록은 최근 30일까지 보관
+let pastOpen = false;      // 지난 사용 기록은 처음엔 접어 둠 (화살표를 누르면 펼침)
 function openMine() {
   go('mine');
-  const today = ymd(new Date());
-  let list = myRentals().filter((r) => r.date >= today);   // 지난 날짜 대여는 정리
+  const cut = new Date(); cut.setDate(cut.getDate() - HISTORY_DAYS);
+  let list = myRentals().filter((r) => r.date >= ymd(cut));   // 30일보다 오래된 기록만 정리
   saveMyRentals(list);
   renderMine(list, null);
   if (!list.length) return;
@@ -916,22 +976,42 @@ function renderMine(list, status) {
     return;
   }
   const d = new Date(), today = ymd(d), nowHM = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-  const order = list.map((r, i) => i).sort((a, b) => (list[a].date + list[a].start).localeCompare(list[b].date + list[b].start));
-  $('myList').innerHTML = order.map((i) => {
+  // 사용 시간이 끝났는지: 지난 날짜이거나, 오늘인데 끝나는 시각이 지났으면 완료
+  const done = (r) => r.date < today || (r.date === today && r.end <= nowHM);
+  const idx = list.map((r, i) => i);
+  const key = (i) => list[i].date + list[i].start;
+  const upcoming = idx.filter((i) => !done(list[i])).sort((a, b) => key(a).localeCompare(key(b)));
+  const past = idx.filter((i) => done(list[i])).sort((a, b) => key(b).localeCompare(key(a)));   // 최근 기록부터
+
+  const item = (i) => {
     const r = list[i], st = status ? status[i] : 'active';
+    const extra = r.people ? ' · ' + esc(r.people + '명') : '';
     if (st === 'cancelled') {
       return `<div class="my-item off"><div class="what"><b>${esc(r.id)}<span class="tag cancel">취소됨</span></b>
         <small>${dateLabel(r.date)} ${r.start}~${r.end} · 관리자가 취소했어요</small></div>
         <button onclick="removeMine(${i})">지우기</button></div>`;
     }
+    if (done(r)) {
+      return `<div class="my-item done"><div class="what"><b>${esc(r.id)}<span class="tag over">사용 완료</span></b>
+        <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra}</small>
+        <small class="done-msg">사용 시간이 완료된 강의실입니다</small></div></div>`;
+    }
     const ing = r.date === today && r.start <= nowHM && nowHM < r.end;
     const tag = ing ? '<span class="tag now">사용 중</span>' : '<span class="tag soon">예정</span>';
-    const extra = r.people ? r.people + '명' : '';
     return `<div class="my-item"><div class="what"><b>${esc(r.id)}${tag}</b>
-      <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra ? ' · ' + esc(extra) : ''}</small></div>
+      <small>${dateLabel(r.date)} ${r.start}~${r.end}${extra}</small></div>
       <button onclick="cancelMyRental(${i})">취소</button></div>`;
-  }).join('') + (status ? '' : '<p class="note">상태 확인 중...</p>');
+  };
+
+  $('myList').innerHTML =
+    `<h3 class="my-sec">사용 중 · 예정</h3>` +
+    (upcoming.length ? upcoming.map(item).join('') : '<p class="my-empty">지금 사용 중이거나 예정된 강의실이 없어요.</p>') +
+    (past.length ? `<details class="past-box" ${pastOpen ? 'open' : ''} ontoggle="pastOpen = this.open">
+        <summary class="my-sec past">지난 사용 기록 <small>${past.length}개 · 최근 ${HISTORY_DAYS}일</small><span class="arrow" aria-hidden="true">▾</span></summary>
+        ${past.map(item).join('')}</details>` : '') +
+    (status ? '' : '<p class="note">상태 확인 중...</p>');
 }
+
 function removeMine(i) {
   const list = myRentals(); list.splice(i, 1); saveMyRentals(list); openMine();
 }
@@ -1105,6 +1185,7 @@ function sendReport() {
 /* ===== 자동 새로고침: 조회 화면을 보고 있으면 5분마다 ===== */
 const REFRESH_MS = 5 * 60 * 1000;
 setInterval(() => {
+  if (!document.hidden && !$('home').hidden) loadBusy();   // 홈 화면이면 버스 색도 갱신
   if (document.hidden || $('search').hidden || !$('list').querySelector('.card')) return;
   // '현재' 시각으로 보고 있었다면 새 현재 시각으로, 아니면 고른 시간 그대로 다시 조회
   if ($('time').value.indexOf('now:') === 0) setNowAndSearch(); else search();
@@ -1113,6 +1194,7 @@ setInterval(() => {
 /* ===== 시작 ===== */
 fillSelects();
 buildMap();
+window.mapReady = true;   // 이후 홈 화면이 열릴 때마다 버스 색을 불러옴
 buildChips();
 checkPromo();
 if (QR_ROOM) openRoom(QR_ROOM); else go('home');
