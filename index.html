@@ -14,6 +14,9 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
+<!-- 서버(Apps Script) 주소에 미리 연결해 두어 첫 요청을 빠르게 -->
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap">
 <style>
   :root {
@@ -537,13 +540,18 @@ let myCheckin = null;   // { id, row, expire }
 const $ = (id) => document.getElementById(id);
 /* 홈 지도의 버스 색(신호등): 서버에서 건물별 단계를 받아 칠함. 실패하면 기본 노랑 그대로 */
 const BUS_COLOR = { red: '#E5574D', yellow: '#E9C35A', green: '#3DBE76' };
+function paintBusy(res) {
+  BUILDINGS.forEach((b) => {
+    const el = document.querySelector(`.stop[data-code="${b.code}"] .bus`);
+    if (el) el.setAttribute('fill', BUS_COLOR[(res && res.levels && res.levels[b.code]) || 'yellow']);
+  });
+}
 function loadBusy() {
-  api('getBusyLevels', []).then((res) => {
-    BUILDINGS.forEach((b) => {
-      const el = document.querySelector(`.stop[data-code="${b.code}"] .bus`);
-      if (el) el.setAttribute('fill', BUS_COLOR[(res && res.levels && res.levels[b.code]) || 'yellow']);
-    });
-  }).catch(() => {});
+  // 같은 시간 칸(정각~50분)에 받아 둔 색이 있으면 먼저 칠하고, 뒤에서 최신 색으로 바꿈
+  const d = new Date(), key = 'busy:' + d.getDate() + ':' + d.getHours() + ':' + (d.getMinutes() >= 50 ? 'b' : 'a');
+  const hit = memoGet(key);
+  if (hit) paintBusy(hit);
+  api('getBusyLevels', []).then((res) => { memoSet(key, res); paintBusy(res); }).catch(() => {});
 }
 function go(name) {
   if (name === 'home' && window.mapReady) loadBusy();
@@ -568,8 +576,36 @@ async function api(fn, args) {
   });
   const out = await res.json();
   if (!out.ok) throw new Error(out.error || '서버 오류');
+  // 사용 신청·취소·체크인·퇴실·신고 뒤에는 저장해 둔 강의실 상태를 버려서 바로 최신 상태가 보이게
+  if (CHANGES.indexOf(fn) >= 0) forgetRooms();
   return out.data;
 }
+const CHANGES = ['rent', 'cancelRental', 'checkIn', 'checkOut', 'report', 'submitReport'];
+function forgetRooms() {
+  try {
+    Object.keys(sessionStorage).filter((k) => k.indexOf('memo:rooms:') === 0).forEach((k) => sessionStorage.removeItem(k));
+  } catch (e) {}
+}
+/* ===== 빠른 화면을 위한 임시 저장 (이 브라우저 탭 안에서만, 10분) =====
+ * 같은 건물·시간을 다시 열면 저장해 둔 결과를 바로 보여 주고, 뒤에서 최신 정보로 바꿈 */
+const MEMO_MS = 10 * 60 * 1000;
+function memoGet(key) {
+  try {
+    const v = JSON.parse(sessionStorage.getItem('memo:' + key) || 'null');
+    return v && Date.now() - v.t < MEMO_MS ? v.d : null;
+  } catch (e) { return null; }
+}
+function memoSet(key, data) {
+  try { sessionStorage.setItem('memo:' + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e) {}
+}
+// 건물별 강의실 목록은 잘 안 바뀌어서 한 번 받아 오면 다시 묻지 않음
+const roomListMemo = {};
+function listRoomsCached(code, ok) {
+  const hit = roomListMemo[code] || memoGet('roomlist:' + code);
+  if (hit) { roomListMemo[code] = hit; ok(hit); return; }
+  call('listRooms', [code], (ids) => { roomListMemo[code] = ids; memoSet('roomlist:' + code, ids); ok(ids); });
+}
+
 function call(fn, args, ok) {
   api(fn, args).then(ok)
     .catch((err) => toast('오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요')));
@@ -702,18 +738,33 @@ function setNowAndSearch() {
   setDayTime(DAYS[d.getDay()], o.value);
   search();
 }
+let searchSeq = 0;   // 가장 마지막에 보낸 조회만 화면에 반영 (늦게 온 옛 응답이 덮어쓰지 않게)
 function search() {
   const code = $('building').value, day = $('day').value;
   let time = $('time').value, exact = false;
   if (time.indexOf('now:') === 0) { time = time.slice(4); exact = true; }   // 현재 시각 조회
-  $('list').innerHTML = '<div class="msg">불러오는 중...</div>';
-  $('resultInfo').textContent = '';
-  call('getRooms', [code, day, time, exact], renderList);
+  // '현재 시각' 조회는 같은 시간 칸(예: 14시대)끼리 저장 결과를 같이 씀
+  const key = 'rooms:' + code + ':' + day + ':' + (exact ? 'now' + time.slice(0, 2) : time);
+  const hit = memoGet(key);
+  const seq = ++searchSeq;
+  if (hit) {
+    renderList(hit, true);   // 저장해 둔 결과를 바로 보여 줌
+  } else {
+    $('list').innerHTML = '<div class="msg">불러오는 중...</div>';
+    $('resultInfo').textContent = '';
+  }
+  api('getRooms', [code, day, time, exact])
+    .then((res) => { memoSet(key, res); if (seq === searchSeq) renderList(res); })
+    .catch((err) => {
+      if (seq !== searchSeq) return;
+      if (hit) $('resultInfo').textContent = $('resultInfo').textContent.replace(' · 최신 정보 확인 중...', ' · 최신 정보를 불러오지 못했어요');
+      toast('오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요'));
+    });
 }
-function renderList(res) {
+function renderList(res, stale) {
   lastResult = res;
   const live = res.isLive ? '실시간 체크인 반영' : '시간표 기준 (체크인 인원은 지금 시간에만 보여요)';
-  $('resultInfo').textContent = `${res.day}요일 ${res.time} · ${live}`;
+  $('resultInfo').textContent = `${res.day}요일 ${res.time} · ${live}` + (stale ? ' · 최신 정보 확인 중...' : '');
   renderFloors();
   drawCards();
 }
@@ -1113,7 +1164,7 @@ function loadReviewRooms() {
   const code = $('rvBuilding').value;
   if (!code) { $('rvRoom').innerHTML = '<option value="">건물을 먼저 골라 주세요</option>'; return; }
   $('rvRoom').innerHTML = '<option value="">불러오는 중...</option>';
-  call('listRooms', [code], (ids) => {
+  listRoomsCached(code, (ids) => {
     $('rvRoom').innerHTML = '<option value="">강의실 선택</option>' + ids.map((i) => `<option>${i}</option>`).join('');
   });
 }
@@ -1163,7 +1214,7 @@ function loadReportRooms(selected) {
   const code = $('repBuilding').value;
   if (!code) { $('repRoom').innerHTML = '<option value="">건물을 먼저 골라 주세요</option>'; return; }
   $('repRoom').innerHTML = '<option value="">불러오는 중...</option>';
-  call('listRooms', [code], (ids) => {
+  listRoomsCached(code, (ids) => {
     $('repRoom').innerHTML = '<option value="">강의실 선택</option>' + ids.map((i) => `<option>${i}</option>`).join('');
     if (typeof selected === 'string') $('repRoom').value = selected;
   });
