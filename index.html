@@ -184,6 +184,18 @@
   .reasons { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
   .reasons button { padding: 9px 14px; border-radius: 999px; border: 1.5px solid var(--line); background: #fff; cursor: pointer; font-weight: 600; }
   .reasons button.on { border-color: var(--red); color: var(--red); background: var(--red-bg); font-weight: 700; }
+  /* 원탭 신고: 강의실 화면 안에서 사유를 누르면 바로 접수 */
+  .quick { margin-top: 14px; padding: 14px; border-radius: 14px; background: #FBF4F3; }
+  .panel > .quick:first-child { margin-top: 0; }
+  .quick-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .quick-top b { color: var(--red); font-size: 15px; }
+  .quick-top span { font-size: 12px; color: var(--muted); }
+  .quick .reasons { margin: 10px 0 0; }
+  .quick .reasons button { font-size: 14px; padding: 8px 12px; }
+  .quick .reasons button:disabled { opacity: .5; }
+  .quick.done { background: #EEF8F1; }
+  .quick.done b { color: #23864F; font-size: 16px; }
+  .quick.done ul { margin: 8px 0 10px; padding-left: 18px; font-size: 14px; line-height: 1.6; }
   .field, .row select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--line); border-radius: 12px;
            background-color: #fff; font-size: 16px; }
   .field { margin-bottom: 10px; }
@@ -527,7 +539,15 @@ const BUILDINGS = [
   { code: 'SH', name: '성심관',       sx: 470, sy: 48,  tx: 562, ty: 48 },
   { code: 'NP', name: '약학관',       sx: 330, sy: 56,  tx: 238, ty: 56 }
 ];
-const REASONS = ['잠겨 있어요', '시험 배치돼 있어요', '수업·행사 중이에요', '시설이 망가졌어요', '기타'];
+const REASONS = ['잠겨 있어요', '시험 배치돼 있어요', '수업·행사 중이에요', '시설이 망가졌어요', '위험해요', '기타'];
+// 원탭 신고 버튼 (기타는 글을 써야 해서 신고 화면으로 보냄)
+const QUICK_REASONS = REASONS.filter((r) => r !== '기타');
+// 학교 담당 부서로 메일이 가는 사유 (자동 메일 스크립트 ReportMail.gs와 같은 기준)
+const MAIL_NOW = ['위험해요'];          // 바로 전달
+const MAIL_DAILY = ['시설이 망가졌어요']; // 다음 날 오전 9시에 모아서 전달
+// 신고 자동 메일(ReportMail.gs) 설치를 마친 뒤에 true로 바꾸세요. false면 '메일로 전달돼요' 안내를 숨겨요.
+const MAIL_READY = false;
+const REPORT_SHOW_MIN = 30;             // 신고가 다른 학생 화면에 보이는 시간 (Code.gs의 REPORT_MINUTES와 같게)
 
 let reportReason = '';
 let lastResult = null;   // 마지막 조회 결과
@@ -811,7 +831,7 @@ function drawCards() {
       <div class="rid"><svg class="rid-ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 18v10" stroke="#2E3440" stroke-width="2.8" stroke-linecap="round"/><path d="M10 28.5h12" stroke="#2E3440" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="11" r="9.5" fill="#E0A526"/><rect x="10.2" y="6.2" width="11.6" height="8.6" rx="2" fill="#2E3440"/><rect x="11.8" y="7.8" width="8.4" height="3.2" rx=".6" fill="#E0A526"/><circle cx="12.9" cy="15.4" r="1.3" fill="#2E3440"/><circle cx="19.1" cy="15.4" r="1.3" fill="#2E3440"/></svg><span>${esc(r.id)}</span></div>
       <div class="mid">
         <div class="st t-${r.color}">${esc(r.status)}</div>
-        ${r.note ? `<div class="sub">${esc(r.note.replace(/(\d\d:\d\d)까지/, '~$1'))}</div>` : ''}
+        ${r.note ? `<div class="sub">${esc(noteText(r).replace(/(\d\d:\d\d)까지/, '~$1'))}</div>` : ''}
         ${sortMode === 'free' && r.freeMin > 0 ? `<div class="free-line">${r.nextClass ? esc(r.nextClass) + ' 수업 전까지 ' : '저녁까지 '}${freeText(r.freeMin)}</div>` : ''}
       </div>
       <div class="ppl">${r.people}<small>현재 인원</small></div>
@@ -846,7 +866,7 @@ function showDetail(id) {
     <div class="board" role="group" aria-label="${esc(r.id)} 상태">
       <div class="b-top"><span>강의실</span><span>운행 상태</span></div>
       <div class="b-row"><b class="b-room">${esc(r.id)}</b><span class="b-st led-${r.color}">${esc(r.status)}</span></div>
-      <div class="b-msg">${LED_MSG[r.color] || ''}${r.note ? `<br><span>${esc(r.note.replace(/(\d\d:\d\d)까지/, '~$1'))}</span>` : ''}</div>
+      <div class="b-msg">${LED_MSG[r.color] || ''}${r.note ? `<br><span>${esc(noteText(r).replace(/(\d\d:\d\d)까지/, '~$1'))}</span>` : ''}</div>
     </div>
     <div class="ride">
       <div class="ride-top"><span>탑승 인원 <b>${r.people}</b>${cap ? ` / ${cap}명` : '명'}</span><em class="${lv[0]}">${lv[1]}</em></div>
@@ -856,6 +876,7 @@ function showDetail(id) {
       ${tile('강의실 유형', r.type)}${tile('콘센트', r.outlets, '개')}
       ${tile('칠판', r.board)}${tile('평소 혼잡도', r.crowd)}
     </div>
+    ${lastResult.isLive ? quickBox(r.id) : ''}
     <div class="d-btns">
       <button class="wide soft" onclick="closeDetail()">닫기</button>
       <button class="wide blue" onclick="closeDetail(); openRental('${r.id}')" ${r.color === 'red' ? 'disabled' : ''}>사용 신청하기</button>
@@ -1093,22 +1114,74 @@ function renderRoom(id, r) {
         <button onclick="setPeople(-1)">−</button><b id="ppl">${people}명</b><button onclick="setPeople(1)">+</button>
       </div>
       <div class="rules"><b>이용 수칙</b>
-        <ul><li>퇴실할 때 불을 꺼 주세요</li><li>전열기구는 쓸 수 없어요</li><li>책상은 사용 후 원래 자리로</li><li>파손이나 강의실 정보 오류는 '신고하기'로 알려 주세요</li></ul>
+        <ul><li>퇴실할 때 불을 꺼 주세요</li><li>전열기구는 쓸 수 없어요</li><li>책상은 사용 후 원래 자리로</li><li>파손·위험이나 강의실 정보 오류는 아래 버튼으로 바로 알려 주세요</li></ul>
         <label><input type="checkbox" id="agree" onchange="$('ciBtn').disabled=!this.checked"> 수칙을 확인했어요</label>
       </div>
       <button class="wide blue" id="ciBtn" disabled onclick="doCheckIn('${id}')">체크인하기</button>`;
   } else {
     action = `<p>지금은 체크인할 수 없어요.</p>`;
   }
+  // QR로 들어온 학생은 지금 강의실 앞에 있으니 신고 버튼을 맨 위에 보여 줌
+  const atRoom = QR_ROOM === id;
+  const quick = `<div class="panel">${quickBox(id)}</div>`;
   $('roomBody').innerHTML = `
     <div class="panel">
       <p class="big">${esc(id)}</p>
       <span class="chip c-${r.color}">${esc(r.status)}</span>
-      <p class="sub" style="color:var(--muted)">현재 사용 인원 ${r.people}명 · 크기 ${r.capacity === '' ? '-' : r.capacity + '명'}${r.note ? ' · ' + esc(r.note) : ''}</p>
+      <p class="sub" style="color:var(--muted)">현재 사용 인원 ${r.people}명 · 크기 ${r.capacity === '' ? '-' : r.capacity + '명'}${r.note ? ' · ' + esc(noteText(r)) : ''}</p>
     </div>
-    <div class="panel">${action}
-      <button class="wide line" onclick="openReport('${id}')">이 강의실을 쓸 수 없어요</button>
-    </div>`;
+    ${atRoom ? quick : ''}
+    <div class="panel">${action}</div>
+    ${atRoom ? '' : quick}`;
+}
+
+/* ===== 원탭 신고 + 신고 효과 안내 =====
+ * 근거: 단계를 줄여 쉽게(BIT EAST 'Make it Easy'), 신고가 반영됐다는 걸 바로 보여 줌
+ * (Sjoberg·Mellon·Peixoto 2017: 첫 신고가 반영된 경험이 다음 신고를 늘림) */
+// 신고로 '사용 불가'가 된 강의실은 학생 신고라는 걸 알려 줌
+function noteText(r) {
+  if (r && r.color === 'red' && REASONS.indexOf(r.note) >= 0) return '학생 신고: ' + r.note;
+  return r && r.note ? r.note : '';
+}
+function quickBox(id) {
+  return `<div class="quick" id="qb-${id}">
+    <div class="quick-top"><b>이 강의실을 쓸 수 없나요?</b><span>누르면 바로 접수 · 이름, 연락처는 묻지 않아요</span></div>
+    <div class="reasons">
+      ${QUICK_REASONS.map((r) => `<button onclick="quickReport('${id}', '${r}')">${r}</button>`).join('')}
+      <button onclick="closeDetail(); openReport('${id}')">기타 (직접 쓰기)</button>
+    </div>
+  </div>`;
+}
+function quickReport(id, reason) {
+  const box = $('qb-' + id);
+  if (box) box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  api('report', [id, reason])
+    .then(() => showReported(id, reason))
+    .catch((err) => {
+      if (box) box.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      toast('오류: ' + (err && err.message ? err.message : '잠시 뒤 다시 시도해 주세요'));
+    });
+}
+// 신고 직후, 이 신고가 무엇을 바꾸는지 보여 줌
+function showReported(id, reason) {
+  const lines = [];
+  if (!MAIL_READY) {
+    // 자동 메일 설치 전에는 안내하지 않음
+  } else if (MAIL_NOW.indexOf(reason) >= 0) {
+    lines.push('10분 안에 학교 담당 부서로 메일이 전달돼요.');
+  } else if (MAIL_DAILY.indexOf(reason) >= 0) {
+    lines.push('학교 담당 부서에 메일로 전달돼요 (다음 날 오전 9시에 모아서).');
+  }
+  lines.push(`앞으로 ${REPORT_SHOW_MIN}분 동안 다른 학생들에게 '사용 불가 · 학생 신고'로 보여요.`);
+  lines.push('덕분에 다음 학생은 헛걸음하지 않아도 돼요.');
+  const html = `<div class="quick done">
+    <b>✓ ${esc(id)} 신고가 접수됐어요</b>
+    <ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+    <button class="wide soft" onclick="closeDetail(); openRoom('${id}')">강의실 상태 다시 보기</button>
+  </div>`;
+  const box = $('qb-' + id);
+  if (box) box.outerHTML = html;
+  else { go('room'); $('roomBody').innerHTML = `<div class="panel">${html}</div>`; }
 }
 function setPeople(d) { people = Math.min(10, Math.max(1, people + d)); $('ppl').textContent = people + '명'; }
 function doCheckIn(id) {
@@ -1222,8 +1295,7 @@ function sendReport() {
   $('repSend').disabled = true;
   call('report', [id, reason], () => {
     $('repSend').disabled = false;
-    toast('신고를 보냈어요. 감사합니다!');
-    go('home');
+    showReported(id, reason);   // 신고 화면에서 보낸 경우에도 신고 효과를 보여 줌
   });
   setTimeout(() => { $('repSend').disabled = false; }, 4000);
 }
