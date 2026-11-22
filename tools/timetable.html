@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>공강 정류장 · 시간표 변환기</title>
+<style>
+  :root { --navy: #2E3440; --cream: #FBF6E6; --paper: #F6F3EC; --yellow: #E9C35A; --gold: #7A5F12; --body: #4C566A; --line: #E1DCCF; --red: #B9413A; --green: #23864F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: var(--paper); color: var(--navy); }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+  .kicker { color: var(--gold); font-weight: 700; font-size: 14px; }
+  h1 { margin: 6px 0 8px; font-size: 28px; }
+  p { line-height: 1.6; color: var(--body); }
+  .card { background: #FFFDF8; border: 1.5px solid var(--line); border-radius: 16px; padding: 20px; margin: 16px 0; }
+  .drop { border: 2px dashed #C9B26A; border-radius: 14px; padding: 32px 16px; text-align: center; background: var(--cream); cursor: pointer; }
+  .drop.over { background: #F5E7B8; }
+  .drop b { display: block; font-size: 18px; margin-bottom: 6px; color: var(--navy); }
+  .btn { display: inline-block; border: 0; border-radius: 12px; padding: 13px 20px; font-size: 16px; font-weight: 800; cursor: pointer; background: var(--navy); color: #fff; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+  .stat { flex: 1; min-width: 140px; background: var(--cream); border-radius: 12px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { font-size: 13px; color: var(--body); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { background: var(--navy); color: #fff; }
+  .err { color: var(--red); font-weight: 700; }
+  .ok { color: var(--green); font-weight: 700; }
+  ol { line-height: 1.8; color: var(--body); padding-left: 20px; }
+  code { background: #EFEBE0; border-radius: 5px; padding: 1px 6px; }
+  .small { font-size: 13px; color: #6B7280; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker">공강 정류장 운영 도구</div>
+  <h1>트리니티 시간표 → 사이트 시간표 변환기</h1>
+  <p>매뉴얼 ①로 받은 <code>강의실별시간표_[학년도]-[학기].csv</code>를 넣으면, 사이트 시트의 <code>timetable</code> 탭에 그대로 넣을 수 있는 파일로 바꿔 줘요.
+  파일은 <b>이 브라우저 안에서만</b> 처리되고 어디에도 올라가지 않아요.</p>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <b>CSV 파일을 여기에 끌어다 놓거나 눌러서 고르세요</b>
+      <span class="small">강의실별시간표 CSV (또는 개설강좌 CSV)</span>
+      <input type="file" id="file" accept=".csv,text/csv" hidden>
+    </label>
+    <p id="msg" class="small"></p>
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><b id="sRooms">0</b><span>강의실 수</span></div>
+      <div class="stat"><b id="sIn">0</b><span>원본 줄 수</span></div>
+      <div class="stat"><b id="sOut">0</b><span>변환된 줄 수 (연속 교시는 한 줄로)</span></div>
+    </div>
+    <button class="btn" id="dl" disabled>timetable 파일 내려받기</button>
+  </div>
+
+  <div class="card" id="previewCard" hidden>
+    <b>미리보기 (처음 12줄)</b>
+    <table id="preview"></table>
+  </div>
+
+  <div class="card">
+    <b>규칙</b>
+    <ol>
+      <li>교시 → 시각: <b>n교시 = (8+n):00 ~ (8+n):50</b> (1교시 09:00~09:50, 13교시 21:00~21:50)</li>
+      <li>같은 강의실·요일·과목(과목번호+분반)의 이어지는 교시는 한 줄로 합쳐요. 예) 4·5교시 → 12:00~13:50</li>
+      <li>강의실이 없는 수업(사이버강의 등)은 빠져요. 사이트의 rooms 탭에 없는 강의실은 넣어도 화면에 나오지 않아요.</li>
+      <li>결과 열: <code>강의실 | 요일 | 시작 | 종료 | 교과목명(참고)</code> — 사이트는 앞의 4열만 써요.</li>
+    </ol>
+    <p class="small">시트에 넣는 방법은 운영 매뉴얼 ③ 「시간표를 사이트에 반영하기」를 보세요.</p>
+  </div>
+</main>
+<script>
+const DAYS = '월화수목금토일';
+let output = null, tag = '';
+
+const $ = (id) => document.getElementById(id);
+const pad = (n) => ('0' + n).slice(-2);
+const startOf = (p) => pad(8 + p) + ':00';
+const endOf = (p) => pad(8 + p) + ':50';
+
+// 따옴표·쉼표·줄바꿈을 지원하는 CSV 읽기
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((v) => String(v).trim() !== ''));
+}
+
+// 한 칸 = 강의실·요일·교시 (강의실별시간표 CSV), 또는 강의시간 원문(개설강좌 CSV)에서 칸 목록 만들기
+function toSlots(rows) {
+  const head = rows[0].map((h) => String(h).replace(/\s/g, ''));
+  const col = (n) => head.indexOf(n);
+  const slots = [];
+  if (col('강의실') >= 0 && col('요일') >= 0 && col('교시') >= 0) {
+    const cR = col('강의실'), cD = col('요일'), cP = col('교시'), cN = col('과목명'), cNo = col('과목번호'), cCl = col('분반');
+    rows.slice(1).forEach((r) => {
+      const room = String(r[cR] || '').trim(), day = String(r[cD] || '').trim(), p = parseInt(r[cP], 10);
+      if (!room || DAYS.indexOf(day) < 0 || !(p >= 1 && p <= 15)) return;
+      slots.push({ room, day, p, name: cN >= 0 ? String(r[cN]).trim() : '', key: (cNo >= 0 ? r[cNo] : '') + '-' + (cCl >= 0 ? r[cCl] : '') + '-' + (cN >= 0 ? r[cN] : '') });
+    });
+    return { slots, kind: '강의실별시간표' };
+  }
+  const cRaw = col('강의시간(원문)');
+  if (cRaw >= 0) {
+    const re = /^([월화수목금토일])(\d+)(?:~(\d+))?\(([^)]*)\)$/;
+    const cN = col('과목명'), cNo = col('과목번호'), cCl = col('분반');
+    rows.slice(1).forEach((r) => {
+      String(r[cRaw] || '').split(/,\s*/).forEach((s) => {
+        const m = s.trim().match(re);
+        if (!m || !m[4].trim()) return;
+        const a = +m[2], b = m[3] ? +m[3] : a;
+        for (let p = a; p <= b; p++) slots.push({ room: m[4].trim(), day: m[1], p, name: cN >= 0 ? String(r[cN]).trim() : '', key: (cNo >= 0 ? r[cNo] : '') + '-' + (cCl >= 0 ? r[cCl] : '') });
+      });
+    });
+    return { slots, kind: '개설강좌' };
+  }
+  return { slots: [], kind: '' };
+}
+
+// 같은 강의실·요일·과목의 이어지는 교시를 한 줄로
+function merge(slots) {
+  const groups = {};
+  slots.forEach((s) => {
+    const g = s.room + '|' + s.day + '|' + s.key;
+    (groups[g] = groups[g] || { room: s.room, day: s.day, name: s.name, ps: new Set() }).ps.add(s.p);
+  });
+  const out = [];
+  Object.values(groups).forEach((g) => {
+    const ps = [...g.ps].sort((a, b) => a - b);
+    let a = ps[0], prev = ps[0];
+    for (let i = 1; i <= ps.length; i++) {
+      if (i < ps.length && ps[i] === prev + 1) { prev = ps[i]; continue; }
+      out.push([g.room, g.day, startOf(a), endOf(prev), g.name]);
+      if (i < ps.length) { a = ps[i]; prev = ps[i]; }
+    }
+  });
+  out.sort((x, y) => x[0].localeCompare(y[0]) || DAYS.indexOf(x[1]) - DAYS.indexOf(y[1]) || x[2].localeCompare(y[2]) || x[4].localeCompare(y[4]));
+  return out;
+}
+
+function csvCell(v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+
+function handle(file) {
+  if (!file) return;
+  tag = (file.name.match(/(\d{4}-[^.]+)\.csv$/) || [])[1] || '';
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const rows = parseCSV(String(reader.result));
+      if (rows.length < 2) throw new Error('내용이 없는 파일이에요.');
+      const { slots, kind } = toSlots(rows);
+      if (!kind) throw new Error('강의실·요일·교시 열을 찾지 못했어요. 매뉴얼 ①로 받은 「강의실별시간표」 CSV인지 확인해 주세요.');
+      if (!slots.length) throw new Error('변환할 수업이 없어요. 학년도·학기를 다시 확인해 주세요.');
+      output = merge(slots);
+      $('sRooms').textContent = new Set(output.map((r) => r[0])).size;
+      $('sIn').textContent = (rows.length - 1).toLocaleString();
+      $('sOut').textContent = output.length.toLocaleString();
+      $('stats').hidden = false;
+      $('preview').innerHTML = '<tr><th>강의실</th><th>요일</th><th>시작</th><th>종료</th><th>교과목명(참고)</th></tr>' +
+        output.slice(0, 12).map((r) => '<tr>' + r.map((v) => '<td>' + String(v).replace(/</g, '&lt;') + '</td>').join('') + '</tr>').join('');
+      $('previewCard').hidden = false;
+      $('dl').disabled = false;
+      $('msg').innerHTML = '<span class="ok">변환 완료</span> · ' + kind + ' 파일 「' + file.name.replace(/</g, '&lt;') + '」';
+    } catch (e) {
+      output = null; $('dl').disabled = true; $('stats').hidden = true; $('previewCard').hidden = true;
+      $('msg').innerHTML = '<span class="err">' + e.message + '</span>';
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+$('file').addEventListener('change', (e) => handle(e.target.files[0]));
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => handle(e.dataTransfer.files[0]));
+
+$('dl').addEventListener('click', () => {
+  if (!output) return;
+  const lines = [['강의실', '요일', '시작', '종료', '교과목명(참고)']].concat(output).map((r) => r.map(csvCell).join(','));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timetable_' + (tag || '변환') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+});
+</script>
+</body>
+</html>
