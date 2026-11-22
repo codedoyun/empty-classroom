@@ -546,7 +546,7 @@ const QUICK_REASONS = REASONS.filter((r) => r !== '기타');
 const MAIL_NOW = ['위험해요'];          // 바로 전달
 const MAIL_DAILY = ['시설이 망가졌어요']; // 다음 날 오전 9시에 모아서 전달
 // 신고 자동 메일(ReportMail.gs) 설치를 마친 뒤에 true로 바꾸세요. false면 '메일로 전달돼요' 안내를 숨겨요.
-const MAIL_READY = false;
+const MAIL_READY = true;
 const REPORT_SHOW_MIN = 30;             // 신고가 다른 학생 화면에 보이는 시간 (Code.gs의 REPORT_MINUTES와 같게)
 
 let reportReason = '';
