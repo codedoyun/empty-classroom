@@ -6,7 +6,7 @@
  ***************************************************************/
 
 /* ===== 설정 (필요하면 여기만 바꾸세요) ===== */
-const MAP_FILE_ID = '여기에_지도_이미지_파일_ID';  // 구글 드라이브에 올린 campus_map.jpg의 파일 ID (GitHub에는 비워 둠)
+const MAP_FILE_ID = '여기에_지도_이미지_파일_ID';  // 구글 드라이브에 올린 campus_map.jpg의 파일 ID
 const OPEN_START = 8 * 60;        // 학교 개방 시작 08:00
 const OPEN_END = 22 * 60;         // 학교 개방 종료 22:00
 const CHECKIN_MINUTES = 90;       // 체크인 자동 만료(분)
@@ -29,7 +29,7 @@ function doGet(e) {
   t.room = room;
   t.mapUrl = mapDataUrl_();
   return t.evaluate()
-    .setTitle('빈 강의실 찾기')
+    .setTitle('공강 정류장')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -45,10 +45,10 @@ function mapDataUrl_() {
 
 /* ===== 시트 읽기 도우미 ===== */
 // 1행 헤더 이름으로 값을 꺼낼 수 있게 객체 배열로 변환 (열 순서가 바뀌어도 동작)
-function table_(name) {
+function table_(name, fresh) {
   const sheet = SS.getSheetByName(name);
   if (!sheet) throw new Error('"' + name + '" 탭을 찾을 수 없어요. 탭 이름을 확인하세요.');
-  const values = sheet.getDataRange().getValues();
+  const values = CACHE_TABS[name] && !fresh ? cachedValues_(name, sheet, false) : sheet.getDataRange().getValues();
   const head = values.shift().map(function (h) { return String(h).trim(); });
   return values.map(function (r, i) {
     const o = { _row: i + 2 };
@@ -58,6 +58,64 @@ function table_(name) {
     });
     return o;
   });
+}
+
+/* ===== 빠른 응답을 위한 캐시 =====
+ * 시트에서 읽은 내용을 잠깐 서버 캐시(CacheService)에 저장해 두고 씀 (시간표·강의실 5분, 실시간 탭 60초).
+ * 시트를 직접 고치면 onEdit가, 화면에서 신청·체크인·신고를 하면 doPost가 그 탭 캐시를 바로 지워서 바로 반영됨.
+ * 그래도 이상하면 편집기에서 clearSheetCache 를 한 번 실행하세요. */
+// 탭별 캐시 시간(초). rentals·checkins·reports는 서버가 기록할 때마다 바로 지우고, 그래도 60초를 넘기지 않게 짧게 둠
+const CACHE_TABS = { rooms: 300, timetable: 300, events: 300, survey: 300, rentals: 60, checkins: 60, reports: 60 };
+// 화면에서 이 기능을 쓰면 해당 탭 캐시를 바로 지움
+const WRITE_TABS = { rent: ['rentals'], cancelRental: ['rentals'], checkIn: ['checkins'], checkOut: ['checkins'], report: ['reports'], submitReport: ['reports'] };
+const CACHE_CHUNK = 30000;   // 캐시 한 칸 용량 제한(100KB) 때문에 나눠서 저장
+
+function cachedValues_(name, sheet, display) {
+  const cache = CacheService.getScriptCache();
+  const base = 'tab_' + name + (display ? '_d' : '');
+  try {
+    const n = Number(cache.get(base + '_n'));
+    if (n > 0) {
+      const keys = [];
+      for (let i = 0; i < n; i++) keys.push(base + '_' + i);
+      const got = cache.getAll(keys);
+      if (keys.every(function (k) { return got[k] != null; })) {
+        return JSON.parse(keys.map(function (k) { return got[k]; }).join(''), function (k, v) {
+          return v && typeof v === 'object' && v.__d !== undefined ? new Date(v.__d) : v;   // 날짜 되살리기
+        });
+      }
+    }
+  } catch (err) {}
+
+  const range = sheet.getDataRange();
+  const values = display ? range.getDisplayValues() : range.getValues();
+  try {
+    const json = JSON.stringify(values.map(function (r) {
+      return r.map(function (c) { return c instanceof Date ? { __d: c.getTime() } : c; });
+    }));
+    const put = {};
+    let n = 0;
+    for (let i = 0; i < json.length; i += CACHE_CHUNK) put[base + '_' + (n++)] = json.slice(i, i + CACHE_CHUNK);
+    put[base + '_n'] = String(n);
+    cache.putAll(put, CACHE_TABS[name] || 60);
+  } catch (err) {}
+  return values;
+}
+
+/* 캐시 지우기 (관리자가 편집기에서 직접 실행해도 됨) */
+function clearSheetCache(names) {
+  const list = names && names.length ? names : Object.keys(CACHE_TABS);
+  const keys = [];
+  list.forEach(function (n) { keys.push('tab_' + n + '_n', 'tab_' + n + '_d_n'); });
+  CacheService.getScriptCache().removeAll(keys);
+}
+
+/* 시트를 손으로 고치면 자동 실행: rooms·timetable·survey 탭이면 캐시를 지움 */
+function onEdit(e) {
+  try {
+    const name = e && e.range ? e.range.getSheet().getName() : '';
+    if (CACHE_TABS[name]) clearSheetCache([name]);
+  } catch (err) {}
 }
 
 function toMin_(v) {
@@ -90,7 +148,7 @@ function pastUsage_(day) {
   const sheet = SS.getSheetByName('survey');
   if (!sheet || sheet.getLastRow() < 2) return map;
 
-  const values = sheet.getDataRange().getDisplayValues();   // 화면에 보이는 글자 그대로
+  const values = cachedValues_('survey', sheet, true);   // 화면에 보이는 글자 그대로 (5분 캐시)
   const head = values.shift().map(function (h) { return String(h).replace(/\s/g, ''); });
   const cRoom = head.indexOf('강의실'), cDay = head.indexOf('요일'), cTime = head.indexOf('조사시각');
   const cN = head.indexOf('인원'), cSt = head.indexOf('상태');
@@ -196,12 +254,20 @@ function rooms_(code, day, min, len) {
       + rentNow.reduce(function (s, x) { return s + (Number(x['인원']) || 1); }, 0);
     const limited = txt_(r['이용제한']).toUpperCase() === 'Y';
     const st = status_(id, min, end, closed, events, classes, blockReports, people, rentals, rentNow, limited);
+    // 다음 수업까지 남은 시간(분): 조회 시각 이후 가장 먼저 시작하는 수업 기준, 없으면 문 닫는 시간(22:00)까지
+    const later = classes
+      .filter(function (c) { return id_(c['강의실']) === id && toMin_(c['시작']) >= min; })
+      .map(function (c) { return toMin_(c['시작']); });
+    const nextStart = later.length ? Math.min.apply(null, later) : -1;
+    const freeMin = (st.color === 'gray' || st.color === 'red') ? 0 : Math.max(0, (nextStart >= 0 ? nextStart : OPEN_END) - min);
     return {
       id: id,
       capacity: r['수용인원'] === '' ? '' : Number(r['수용인원']),
       people: people,
       status: st.status,
       color: st.color,
+      nextClass: nextStart >= 0 ? fmt_(nextStart) : '',   // 다음 수업 시작 시각 (없으면 '')
+      freeMin: freeMin,                                    // 다음 수업까지 남은 분
       // 비었음·사용중 카드는 "문 닫을 때까지" 대신 현장조사 기준 과거 사용 인원을 보여줌
       note: st.past ? pastText_(past, id, hour) : (st.note || ''),
       // 팝업 세부정보용 (시트에 비어 있으면 '')
@@ -214,7 +280,8 @@ function rooms_(code, day, min, len) {
   });
 
   const order = { green: 0, orange: 1, red: 2, gray: 3 };
-  list.sort(function (a, b) { return order[a.color] - order[b.color] || a.id.localeCompare(b.id); });
+  // 상태 순서(비었음 → 사용중 → 사용 불가 → 수업중) 안에서, 다음 수업까지 많이 남은 강의실을 먼저
+  list.sort(function (a, b) { return order[a.color] - order[b.color] || b.freeMin - a.freeMin || a.id.localeCompare(b.id); });
 
   return { rooms: list, isLive: isLive, day: day, time: len === 1 ? fmt_(min) + ' (현재 시각)' : fmt_(min) + '~' + fmt_(end), closed: closed };
 }
@@ -262,6 +329,51 @@ function status_(id, min, end, closed, events, classes, reports, people, rentals
   return { status: '비었음', color: 'green', past: true };
 }
 
+/* ===== 홈 지도: 건물별 '지금 수업 중인 강의실 비율' → 버스 신호등 색 =====
+ * 매시 00분~49분: 그 시간 칸(00~50분)에 수업이 있는 강의실 비율을 건물끼리 비교해
+ *                 많은 쪽 빨강 / 중간 노랑 / 적은 쪽 초록 (수업이 하나도 없으면 전부 초록)
+ * 매시 50분~정각, 개방 시간 밖: 모두 노랑 */
+function getBusyLevels() {
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  if (nowMin < OPEN_START || nowMin >= OPEN_END || now.getMinutes() >= SLOT_MINUTES) {
+    return { mode: 'yellow', levels: {} };
+  }
+  const day = DAYS[now.getDay()];
+  const start = Math.floor(nowMin / 60) * 60, end = start + SLOT_MINUTES;
+
+  const busyIds = {};
+  table_('timetable').forEach(function (c) {
+    if (String(c['요일']).trim() === day && toMin_(c['시작']) < end && toMin_(c['종료']) > start) busyIds[id_(c['강의실'])] = true;
+  });
+
+  const stat = {};   // 건물코드 → { total, busy }
+  table_('rooms').forEach(function (r) {
+    const id = id_(r['강의실']), m = id.match(/^[A-Z]+/);
+    if (!m) return;
+    const b = stat[m[0]] || (stat[m[0]] = { total: 0, busy: 0 });
+    b.total++;
+    if (busyIds[id]) b.busy++;
+  });
+
+  const codes = Object.keys(stat).filter(function (k) { return stat[k].total > 0; });
+  const ratio = {};
+  codes.forEach(function (k) { ratio[k] = stat[k].busy / stat[k].total; });
+  const vals = codes.map(function (k) { return ratio[k]; });
+  const min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+
+  const levels = {};
+  codes.forEach(function (k) {
+    if (max === 0 || ratio[k] === 0) { levels[k] = 'green'; return; }
+    if (max === min) { levels[k] = 'yellow'; return; }
+    const lower = vals.filter(function (v) { return v < ratio[k]; }).length;
+    const same = vals.filter(function (v) { return v === ratio[k]; }).length;
+    const p = (lower + same / 2) / vals.length;   // 건물들 중 내 순위(0~1)
+    levels[k] = p < 1 / 3 ? 'green' : p > 2 / 3 ? 'red' : 'yellow';
+  });
+  return { mode: 'level', levels: levels };
+}
+
 /* 요일 → 오늘부터 가장 가까운 그 요일의 날짜 (예: 오늘 목요일, '월' → 다음 주 월요일) */
 function dateForDay_(day, now, tz) {
   const off = (DAYS.indexOf(day) - now.getDay() + 7) % 7;
@@ -282,9 +394,9 @@ function rentalSheet_() {
 }
 
 // 특정 날짜의 취소되지 않은 대여를 events와 같은 모양으로 반환
-function activeRentals_(date, tz) {
+function activeRentals_(date, tz, fresh) {
   rentalSheet_();
-  return table_('rentals').filter(function (r) {
+  return table_('rentals', fresh).filter(function (r) {
     return dateStr_(r['날짜'], tz) === date && String(r['취소']).trim() === '';
   }).map(function (r) {
     return { '강의실': id_(r['강의실']), '시작': r['시작'], '종료': r['종료'], '인원': r['인원'], '상태명': '대여 중' };
@@ -324,7 +436,7 @@ function rent(id, startHour, hours, people) {
     if (lastEnd >= 0 && start >= lastEnd) throw new Error('오늘 수업이 ' + fmt_(lastEnd) + '에 끝나 잠기는 강의실이라 대여할 수 없어요.');
     const ev = table_('events').filter(function (e) {
       return id_(e['강의실']) === id && dateStr_(e['날짜'], tz) === date && overlap(e);
-    }).concat(activeRentals_(date, tz).filter(function (r) { return r['강의실'] === id && overlap(r); }))[0];
+    }).concat(activeRentals_(date, tz, true).filter(function (r) { return r['강의실'] === id && overlap(r); }))[0];
     if (ev) throw new Error('이미 대여나 시험 일정이 있어요 (' + fmt_(toMin_(ev['시작'])) + '~' + fmt_(toMin_(ev['종료'])) + ').');
 
     const token = Utilities.getUuid().slice(0, 8);
@@ -360,6 +472,25 @@ function rentalStatus(items) {
     if (!v || Number(it.row) < 2 || String(v[8]) !== String(it.token)) return 'missing';
     return String(v[7]).trim() === '' ? 'active' : 'cancelled';
   });
+}
+
+/* 사용 신청 화면용: 오늘 이 강의실의 수업·일정·다른 사용 신청 시간 */
+function todaySchedule(id) {
+  if (!/^[A-Z]{1,3}\d{2,4}$/.test(id)) throw new Error('강의실 번호가 올바르지 않아요.');
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const date = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const day = DAYS[now.getDay()];
+  const pick = function (x, kind) { return { start: fmt_(toMin_(x['시작'])), end: fmt_(toMin_(x['종료'])), kind: kind }; };
+  const classes = table_('timetable').filter(function (c) {
+    return id_(c['강의실']) === id && String(c['요일']).trim() === day;
+  }).map(function (c) { return pick(c, '수업'); });
+  const events = table_('events').filter(function (e) {
+    return id_(e['강의실']) === id && dateStr_(e['날짜'], tz) === date;
+  }).map(function (e) { return pick(e, String(e['상태명']).indexOf('대여') >= 0 ? '대여' : '시험'); });
+  const rentals = activeRentals_(date, tz).filter(function (r) { return r['강의실'] === id; })
+    .map(function (r) { return pick(r, '사용 신청'); });
+  return classes.concat(events, rentals).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
 }
 
 /* QR로 들어온 강의실 1개의 현재 상태 */
@@ -467,6 +598,7 @@ function submitReview(form) {
   if (!/^[A-Z]{1,3}\d{2,4}$/.test(room)) throw new Error('강의실 정보가 없어요.');
   if (!(rating >= 1 && rating <= 5)) throw new Error('별점을 선택해 주세요.');
   if (!text) throw new Error('후기 내용을 입력해 주세요.');
+  if (text.length < 100) throw new Error('후기는 공백 포함 100자 이상 써 주세요.');
 
   let entry = 'N', name = '', phone = '', dept = '', consent = 'N';
   if (form.entry === 'Y') {
@@ -534,6 +666,8 @@ const API = {
   rent: rent,
   cancelRental: cancelRental,
   rentalStatus: rentalStatus,
+  todaySchedule: todaySchedule,
+  getBusyLevels: getBusyLevels,   // 홈 지도 버스 신호등 색   // 사용 신청 화면의 '다음 수업까지' 안내
   visit: visit_
 };
 
@@ -543,6 +677,7 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents);
     if (!Object.prototype.hasOwnProperty.call(API, req.fn)) throw new Error('알 수 없는 요청이에요.');
     out = { ok: true, data: API[req.fn].apply(null, Array.isArray(req.args) ? req.args : []) };
+    if (WRITE_TABS[req.fn]) clearSheetCache(WRITE_TABS[req.fn]);   // 방금 기록한 탭은 다음 조회부터 바로 반영
   } catch (err) {
     out = { ok: false, error: err && err.message ? err.message : String(err) };
   }
@@ -561,3 +696,4 @@ function visit_(room) {
 function test() {
   Logger.log(JSON.stringify(getRooms('N', '금', '17:00'), null, 2));
 }
+
