@@ -1152,7 +1152,13 @@ function quickBox(id) {
     </div>
   </div>`;
 }
+// '위험해요'처럼 학교로 바로 메일이 가는 신고는 한 번 더 확인받음 (취소하면 신고 자체를 보내지 않음)
+function confirmMail(reason) {
+  if (!MAIL_READY || MAIL_NOW.indexOf(reason) < 0) return true;
+  return confirm(`'${reason}' 신고는 학교 담당 부서 메일로 바로 안내가 가요.\n그래도 신고하시겠어요?`);
+}
 function quickReport(id, reason) {
+  if (!confirmMail(reason)) return;
   const box = $('qb-' + id);
   if (box) box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
   api('report', [id, reason])
@@ -1292,6 +1298,7 @@ function sendReport() {
   let reason = reportReason === '기타' ? ($('repEtc').value.trim() || '기타') : reportReason;
   if (!id) { toast('강의실을 골라 주세요'); return; }
   if (!reason) { toast('사유를 골라 주세요'); return; }
+  if (!confirmMail(reason)) return;
   $('repSend').disabled = true;
   call('report', [id, reason], () => {
     $('repSend').disabled = false;
