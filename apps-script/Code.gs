@@ -174,7 +174,7 @@ function pastUsage_(day) {
 
 function pastText_(past, id, hour) {
   const rec = past[id + '|' + hour];
-  if (!rec) return '과거 기록 없음';
+  if (!rec) return '';   // 과거 기록이 없으면 아무 문구도 보내지 않음 (화면에 안 뜸)
   const arr = rec.same.length ? rec.same : rec.all;   // 같은 요일 기록이 있으면 그것만 사용
   const open = arr.filter(function (x) { return !x.locked; });
   if (!open.length) return '과거 이 시간엔 잠겨 있었어요';
